@@ -1,0 +1,559 @@
+"use strict";
+
+// Darl Dark - content script.
+// Extrai features da pagina, roda a mini rede neural (nn.js) e aplica o tema.
+// Nao existe ajuste manual: a rede decide tudo (e aprende com o feedback do popup).
+
+const STYLE_ID = "darl-dark-style";
+const HOST = location.hostname;
+const IS_TOP = window === window.top;
+
+const DEFAULT_SETTINGS = {
+  enabled: true,
+  invertMedia: true, // restaura cores originais de midias (regra classica)
+  smartImages: true, // a rede de imagens decide caso a caso (icones escuros ficam claros)
+  forceTheme: true, // por padrao: ignora o tema escuro do site e aplica retoque proprio
+};
+
+let settings = null;
+let weightsModel = null; // modelo da rede atualmente em uso
+let imageNet = null; // rede de imagens (pesos estaticos embarcados)
+let features = null; // cache das features desta frame
+let applied = null; // o que esta aplicado agora: { mode, invert, brightness, contrast, sepia, invertProb }
+let pipelineReady = false;
+
+// ---------------------------------------------------------------- utilidades
+
+const clamp01 = (v) => Math.min(1, Math.max(0, v));
+
+function lum(r, g, b) {
+  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+}
+
+function parseRGB(color) {
+  // "rgb(a, b, c)" ou "rgba(a, b, c, alpha)"
+  const m = color && color.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\s*\)/);
+  if (!m) return null;
+  return {
+    r: parseFloat(m[1]),
+    g: parseFloat(m[2]),
+    b: parseFloat(m[3]),
+    a: m[4] === undefined ? 1 : parseFloat(m[4]),
+  };
+}
+
+function contrastRatio(l1, l2) {
+  const hi = Math.max(l1, l2) + 0.05;
+  const lo = Math.min(l1, l2) + 0.05;
+  return hi / lo;
+}
+
+// ---------------------------------------------------------------- features (32)
+// Ordem canonica (deve ser identica a tools/train-page-model.js):
+// 0 htmlBg, 1 meanBg | 2-9 histograma de luminancia efetiva (8 faixas)
+// 10 fracWithBg, 11 fracDark, 12 fracLight | 13 textLum, 14 lowContrast, 15 contrast
+// 16 satMean, 17 satHigh, 18 colorful | 19 imgFrac, 20 bgImgFrac, 21 mono
+// 22 fontMean, 23 titleFrac, 24 smallUi, 25 fixedFrac
+// 26 articleN, 27 navN, 28 tableN, 29 formN, 30 mediaN, 31 metaDark
+
+const FEATURE_COUNT = 32;
+
+function inferHtmlBgLum() {
+  // Fundo efetivo: o primeiro body/html com cor opaca; canvas branco como padrao.
+  for (const el of [document.body, document.documentElement]) {
+    if (!el) continue;
+    const c = parseRGB(getComputedStyle(el).backgroundColor);
+    if (c && c.a > 0.5) return lum(c.r, c.g, c.b);
+  }
+  return 1;
+}
+
+function metaDarkScheme() {
+  for (const meta of document.querySelectorAll("meta[name='color-scheme'], meta[name='supported-color-schemes']")) {
+    if ((meta.content || "").toLowerCase().includes("dark")) return 1;
+  }
+  return 0;
+}
+
+function countNorm(n) {
+  return clamp01(Math.log(1 + Math.max(0, n)) / Math.log(61));
+}
+
+function extractFeatures() {
+  // Fallback conservador: assume pagina clara enquanto nao ha DOM suficiente.
+  const fallback = new Array(FEATURE_COUNT).fill(0);
+  fallback[0] = 1;
+  fallback[2 + 7] = 0.8; // h7
+  fallback[12] = 0.8; // fracLight
+  fallback[15] = 0.85; // contrast
+  fallback[22] = 0.5; // fontMean
+  try {
+    const htmlLum = inferHtmlBgLum();
+    const all = document.body ? document.body.querySelectorAll("*") : [];
+    const total = all.length;
+    if (total < 3) return null; // pagina ainda vazia demais
+    const step = Math.max(1, Math.floor(total / 400));
+
+    const hist = new Array(8).fill(0);
+    let effLumSum = 0;
+    let bgCount = 0, darkCount = 0, lightCount = 0;
+    let satSum = 0, satHighCount = 0, colorfulCount = 0;
+    let textLumSum = 0, textCount = 0, lowContrastCount = 0, contrastSum = 0;
+    let fontSum = 0, fontCount = 0, monoCount = 0, titleCount = 0, smallCount = 0;
+    let inlineBgCount = 0, fixedCount = 0, sampled = 0;
+
+    for (let i = 0; i < total; i += step) {
+      const el = all[i];
+      sampled++;
+      const cs = getComputedStyle(el);
+
+      // luminancia efetiva: cor de fundo explicita ou fundo do documento
+      const bg = parseRGB(cs.backgroundColor);
+      let effLum = htmlLum;
+      if (bg && bg.a > 0.4) {
+        effLum = lum(bg.r, bg.g, bg.b);
+        bgCount++;
+        const mx = Math.max(bg.r, bg.g, bg.b);
+        const mn = Math.min(bg.r, bg.g, bg.b);
+        const sat = mx === 0 ? 0 : (mx - mn) / mx;
+        satSum += sat;
+        if (sat > 0.5) satHighCount++;
+        if (sat > 0.4 && effLum > 0.2 && effLum < 0.9) colorfulCount++;
+      }
+      hist[Math.min(7, Math.floor(effLum * 8))]++;
+      effLumSum += effLum;
+      if (effLum < 0.25) darkCount++;
+      else if (effLum > 0.75) lightCount++;
+
+      if (cs.backgroundImage && cs.backgroundImage !== "none") inlineBgCount++;
+
+      const fontSize = parseFloat(cs.fontSize);
+      if (!Number.isNaN(fontSize)) {
+        fontSum += fontSize;
+        fontCount++;
+        if (fontSize >= 24) titleCount++;
+        else if (fontSize <= 12) smallCount++;
+      }
+      if ((cs.fontFamily || "").includes("mono")) monoCount++;
+      if (cs.position === "fixed" || cs.position === "sticky") fixedCount++;
+
+      const fg = parseRGB(cs.color);
+      if (fg && el.childNodes.length && hasText(el)) {
+        const tl = lum(fg.r, fg.g, fg.b);
+        textLumSum += tl;
+        const ratio = contrastRatio(tl, effLum);
+        contrastSum += Math.log(1 + ratio) / Math.log(22);
+        if (ratio < 3) lowContrastCount++;
+        textCount++;
+      }
+    }
+
+    const f = new Array(FEATURE_COUNT).fill(0);
+    f[0] = clamp01(htmlLum);
+    f[1] = clamp01(effLumSum / sampled);
+    for (let b = 0; b < 8; b++) f[2 + b] = clamp01(hist[b] / sampled);
+    f[10] = clamp01(bgCount / sampled);
+    f[11] = clamp01(darkCount / sampled);
+    f[12] = clamp01(lightCount / sampled);
+    f[13] = textCount ? clamp01(textLumSum / textCount) : 0.15;
+    f[14] = textCount ? clamp01(lowContrastCount / textCount) : 0.05;
+    f[15] = textCount ? clamp01(contrastSum / textCount) : 0.8;
+    f[16] = bgCount ? clamp01(satSum / bgCount) : 0.1;
+    f[17] = bgCount ? clamp01(satHighCount / bgCount) : 0.08;
+    f[18] = bgCount ? clamp01(colorfulCount / bgCount) : 0.12;
+    f[19] = clamp01((document.images ? document.images.length : 0) / sampled * 0.5);
+    f[20] = clamp01(inlineBgCount / sampled * 0.5);
+    f[21] = clamp01(monoCount / sampled);
+    f[22] = fontCount ? clamp01((fontSum / fontCount) / 28) : 0.5;
+    f[23] = clamp01(titleCount / sampled);
+    f[24] = clamp01(smallCount / sampled);
+    f[25] = clamp01(fixedCount / sampled);
+    f[26] = countNorm(document.querySelectorAll("article").length);
+    f[27] = countNorm(document.querySelectorAll("nav").length);
+    f[28] = countNorm(document.querySelectorAll("table").length);
+    f[29] = countNorm(document.querySelectorAll("input, textarea, select, form").length);
+    f[30] = countNorm(document.querySelectorAll("video, canvas, iframe").length);
+    f[31] = metaDarkScheme();
+    return f;
+  } catch {
+    return fallback;
+  }
+}
+
+function hasText(el) {
+  for (const node of el.childNodes) {
+    if (node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0) return true;
+  }
+  return false;
+}
+
+// ------------------------------------------------------------ imagens (rede 2)
+
+// Cada <img> e decodificada num canvas 16x16 e a rede de imagens decide
+// entre restaurar as cores originais (fotos/logos) ou manter invertida
+// (icones escuros com transparencia ficariam invisiveis se revertidos).
+
+const SIZE = 16;
+const IMG_BATCH = 16;
+let imgCanvas = null;
+let imgQueue = [];
+let imgRunning = false;
+
+function imageFeatures(img) {
+  if (!imgCanvas) {
+    imgCanvas = document.createElement("canvas");
+    imgCanvas.width = SIZE;
+    imgCanvas.height = SIZE;
+  }
+  const ctx = imgCanvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+  ctx.clearRect(0, 0, SIZE, SIZE);
+  try {
+    ctx.drawImage(img, 0, 0, SIZE, SIZE);
+  } catch {
+    return null; // imagem corrompida ou SVG sem dimensoes intrinsecas
+  }
+  let data;
+  try {
+    data = ctx.getImageData(0, 0, SIZE, SIZE).data;
+  } catch {
+    return null; // cross-origin sem CORS (canvas protegido)
+  }
+
+  let transparent = 0;
+  let lumSum = 0, lumSqSum = 0, satSum = 0, dark = 0, light = 0, n = 0;
+  for (let i = 0; i < data.length; i += 4) {
+    const a = data[i + 3] / 255;
+    if (a < 0.25) {
+      transparent++;
+      continue;
+    }
+    const r = data[i] / 255, g = data[i + 1] / 255, b = data[i + 2] / 255;
+    const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    lumSum += l;
+    lumSqSum += l * l;
+    satSum += mx === 0 ? 0 : (mx - mn) / mx;
+    if (l < 0.3) dark++;
+    else if (l > 0.7) light++;
+    n++;
+  }
+  const total = data.length / 4;
+  if (n === 0) return null; // imagem totalmente transparente: nada a decidir
+  const meanLum = lumSum / n;
+  const std = Math.sqrt(Math.max(0, lumSqSum / n - meanLum * meanLum));
+  return [
+    clamp01(transparent / total),
+    clamp01(meanLum),
+    clamp01(std),
+    clamp01(satSum / n),
+    clamp01(dark / n),
+    clamp01(light / n),
+  ];
+}
+
+function queueImages() {
+  if (!settings || !settings.enabled || !settings.invertMedia || !settings.smartImages) return;
+  if (!applied || !applied.invert) return; // so faz sentido quando a pagina esta invertida
+  const imgs = document.images || [];
+  for (let i = 0; i < imgs.length && imgQueue.length < 400; i++) {
+    const img = imgs[i];
+    const src = img.currentSrc || img.src || "";
+    if (!src || img.dataset.ddSrc === src || img.dataset.ddQueued) continue;
+    img.dataset.ddQueued = "1";
+    imgQueue.push(img);
+  }
+  if (imgQueue.length) runImageQueue();
+}
+
+async function runImageQueue() {
+  if (imgRunning) return;
+  imgRunning = true;
+  while (imgQueue.length) {
+    classifyImage(imgQueue.shift());
+    if (imgQueue.length && imgQueue.length % IMG_BATCH === 0) {
+      // cede a thread entre lotes para nao travar a rolagem
+      await new Promise((r) => (window.requestIdleCallback ? requestIdleCallback(r) : setTimeout(r, 0)));
+    }
+  }
+  imgRunning = false;
+}
+
+function classifyImage(img) {
+  delete img.dataset.ddQueued;
+  const src = img.currentSrc || img.src || "";
+  img.dataset.ddSrc = src;
+  if (!src || !imageNet) return;
+  if (!img.complete || img.naturalWidth === 0) {
+    img.addEventListener("load", () => classifyImage(img), { once: true });
+    return;
+  }
+  const f = imageFeatures(img);
+  if (!f) return; // sem leitura de pixels: fica no padrao (reverter cores)
+  try {
+    const { p } = DarlNN.forward(imageNet, f);
+    if (p[0] > 0.5) img.classList.add("dd-keep");
+    else img.classList.remove("dd-keep");
+  } catch {
+    /* decisao falhou: mantem padrao */
+  }
+}
+
+// ---------------------------------------------------------------- decisao
+
+function computeDecision() {
+  if (!settings || !settings.enabled) return { off: true };
+  if (!features || !weightsModel) return null; // IA ainda nao pronta nesta frame
+
+  const { p } = DarlNN.forward(weightsModel, features);
+  const invert = p[0] > 0.5;
+  const invertProb = Math.round(p[0] * 100) / 100;
+  const sepia = 0.5 * p[3];
+  const tint = 0.25 * p[5];
+
+  // Site ja escuro: sem forceTheme, a extensao deixa a pagina em paz.
+  if (!invert && !settings.forceTheme) {
+    return { mode: "auto", off: true, invertProb, skip: true };
+  }
+
+  if (invert) {
+    // Site claro: inverte cores com os knobs do modelo.
+    return {
+      mode: "auto", invert: true, invertProb,
+      brightness: 0.6 + 0.8 * p[1],
+      contrast: 0.6 + 0.8 * p[2],
+      sepia, tint,
+    };
+  }
+
+  // Site ja escuro com forceTheme (padrao): retoque escuro da IA.
+  return {
+    mode: "auto", invert: false, invertProb,
+    brightness: 0.7 + 0.3 * p[4],
+    contrast: 0.9 + 0.25 * p[2],
+    sepia, tint,
+  };
+}
+
+function buildCSS(decision) {
+  const norm = (v) => Math.round(v * 100) / 100;
+  const extras =
+    (decision.sepia > 0.02 ? ` sepia(${norm(decision.sepia)})` : "") +
+    (decision.tint > 0.02 ? ` grayscale(${norm(decision.tint)})` : "");
+
+  if (!decision.invert) {
+    // Site ja escuro (forceTheme): leve retoque de uniformizacao, mantendo escuro.
+    return `
+html {
+  filter: brightness(${norm(decision.brightness)}) contrast(${norm(decision.contrast)})${extras} !important;
+}`;
+  }
+
+  let css = `
+html {
+  filter: invert(1) hue-rotate(180deg) brightness(${norm(decision.brightness)}) contrast(${norm(decision.contrast)})${extras} !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+}`;
+  if (settings.invertMedia) {
+    css += `
+img, video, picture, canvas, iframe, embed, object, image,
+[style*="url("] {
+  filter: invert(1) hue-rotate(180deg) !important;
+}`;
+    // A rede de imagens marca icones/logos escuros: sem o reverter, eles ficam
+    // pretos em fundo escuro (invisiveis). Mantendo invertidos, viram claros.
+    if (settings.smartImages) {
+      css += `
+img.dd-keep {
+  filter: none !important;
+}`;
+    }
+  }
+  return css;
+}
+
+function apply(decision) {
+  const root = document.documentElement;
+  if (!root) return;
+  const style = document.getElementById(STYLE_ID);
+
+  if (!decision || decision.off) {
+    if (style) style.remove();
+    applied = decision ? { ...decision, css: false } : { off: true };
+    return;
+  }
+
+  let el = style;
+  if (!el) {
+    el = document.createElement("style");
+    el.id = STYLE_ID;
+    root.appendChild(el);
+  }
+  const css = buildCSS(decision);
+  if (el.textContent !== css) el.textContent = css; // evita mutacoes desnecessarias (loop com o observer)
+  applied = { ...decision, css: true };
+}
+
+function refresh() {
+  try {
+    const decision = computeDecision();
+    if (decision === null) return; // IA ainda nao pronta: nao mexe no estado atual
+    apply(decision);
+    cacheDecision(decision);
+    queueImages();
+  } catch (err) {
+    // Nunca deixar a analise quebrar a pagina de hospedagem.
+    console.warn("Darl Dark: falha ao aplicar tema", err);
+  }
+}
+
+// ---------------------------------------------------------------- estado
+
+// Memoriza a ultima decisao da rede para este host (anti-flash na proxima visita).
+let lastCacheJson = "";
+function cacheDecision(decision) {
+  if (!IS_TOP || !decision || decision.off || decision.mode !== "auto") return;
+  const slim = {
+    mode: "auto",
+    invert: decision.invert,
+    brightness: decision.brightness,
+    contrast: decision.contrast,
+    sepia: decision.sepia,
+    tint: decision.tint,
+    invertProb: decision.invertProb,
+  };
+  const json = JSON.stringify(slim);
+  if (json === lastCacheJson) return;
+  lastCacheJson = json;
+  chrome.storage.local.get("hostCache", (res) => {
+    if (chrome.runtime.lastError) return;
+    const cache = (res && res.hostCache) || {};
+    cache[HOST] = slim;
+    const keys = Object.keys(cache);
+    for (let i = 0; keys.length - i > 300; i++) delete cache[keys[i]]; // limite de 300 hosts
+    chrome.storage.local.set({ hostCache: cache }, () => void chrome.runtime.lastError);
+  });
+}
+
+function loadState() {
+  chrome.storage.sync.get(DEFAULT_SETTINGS, (sync) => {
+    if (chrome.runtime.lastError) return;
+    settings = { ...DEFAULT_SETTINGS, ...sync };
+    chrome.storage.local.get(["nnWeights", "hostCache"], (local) => {
+      if (chrome.runtime.lastError) return;
+      // Pesos treinados pelo feedback do usuario, se forem compativeis com o
+      // modelo desta versao; senao usa os pesos padrao embutidos.
+      const stored = local && local.nnWeights ? local.nnWeights.w : null;
+      const defaultW = globalThis.DARL_PAGE_WEIGHTS;
+      const w = DarlNN.compatible(stored, defaultW.dims) ? stored : defaultW;
+      weightsModel = DarlNN.makeNet(w.dims, w);
+      if (!imageNet && globalThis.DARL_IMAGE_WEIGHTS) {
+        imageNet = DarlNN.makeNet(globalThis.DARL_IMAGE_WEIGHTS.dims, globalThis.DARL_IMAGE_WEIGHTS);
+      }
+      pipelineReady = true;
+
+      // Tema provisorio memorizado deste host (anti-flash): aplica imediatamente
+      // enquanto a analise da rede neural ainda nao rodou nesta visita.
+      const cached = local && local.hostCache ? local.hostCache[HOST] : null;
+      if (!applied && settings.enabled && !features && cached) {
+        try {
+          apply(cached);
+        } catch {
+          /* cache invalido: ignora e espera a analise real */
+        }
+      }
+
+      refresh();
+    });
+  });
+}
+
+function extractAndRefresh() {
+  features = extractFeatures();
+  lastExtractAt = Date.now();
+  refresh();
+}
+
+// ------------------------------------------------------- reanalise de SPAs
+
+// YouTube, Reddit etc. trocam de tema (claro/escuro) sem recarregar a pagina.
+// Quando o DOM muda muito, reextrai as features (com throttle) e a rede
+// decide de novo - inclusive remover o tema se o site ficou escuro por conta.
+const RE_ANALYZE_MS = 5000;
+const MIN_MUTATIONS = 40;
+let lastExtractAt = 0;
+let mutationCount = 0;
+let reAnalyzeTimer = null;
+
+function scheduleReAnalyze() {
+  mutationCount++;
+  if (document.hidden || reAnalyzeTimer !== null) return;
+  if (mutationCount < MIN_MUTATIONS) return;
+  const passed = Date.now() - lastExtractAt;
+  const wait = passed < RE_ANALYZE_MS ? RE_ANALYZE_MS - passed + 500 : 500;
+  reAnalyzeTimer = setTimeout(() => {
+    reAnalyzeTimer = null;
+    mutationCount = 0;
+    if (!document.hidden) extractAndRefresh();
+  }, wait);
+}
+
+function watchMutations() {
+  if (!IS_TOP || typeof MutationObserver !== "function") return;
+  new MutationObserver(scheduleReAnalyze).observe(document.documentElement, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["class", "style"],
+  });
+}
+
+function start() {
+  const onReady = () => {
+    extractAndRefresh();
+    watchMutations();
+    // paginas que montam o layout depois: reanalisa no load completo
+    if (document.readyState !== "complete") {
+      window.addEventListener("load", extractAndRefresh, { once: true });
+    }
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", onReady, { once: true });
+  } else {
+    onReady();
+  }
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "sync") loadState();
+  if (area === "local" && changes.nnWeights) loadState();
+});
+
+// Popup pedindo estado da aba (responde apenas a frame do topo).
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (!msg || !IS_TOP) return undefined;
+  if (msg.type === "darl-get-state") {
+    sendResponse({
+      ready: pipelineReady && features !== null,
+      hasFeatures: features !== null,
+      features,
+      applied,
+      pageMode: applied && applied.mode ? applied.mode : "auto",
+    });
+    return undefined;
+  }
+  if (msg.type === "darl-refresh") {
+    try {
+      extractAndRefresh();
+      sendResponse({ ok: true });
+    } catch (err) {
+      sendResponse({ ok: false, error: String(err) });
+    }
+    return undefined;
+  }
+  return undefined;
+});
+
+loadState();
+start();

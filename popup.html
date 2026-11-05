@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <h1>Darl Dark <span class="badge-ia">IA</span></h1>
+    <label class="switch" title="Liga ou desliga em todos os sites">
+      <input type="checkbox" id="page-toggle" />
+      <span class="slider"></span>
+    </label>
+  </header>
+
+  <main>
+    <div class="host-line" id="host-line">
+      <span id="host-name"></span>
+    </div>
+
+    <section id="ai-section">
+      <div class="ai-head">
+        <h2>Análise da página</h2>
+        <div class="ai-head-actions">
+          <button id="reanalyze" class="ghost small" title="Rodar a rede de novo nesta página">Reanalisar</button>
+          <span class="pill" id="confidence">—</span>
+        </div>
+      </div>
+      <p class="ai-status" id="ai-status">Analisando...</p>
+      <div class="chips" id="chips">
+        <span class="chip" id="chip-invert"></span>
+        <span class="chip" id="chip-brightness"></span>
+        <span class="chip" id="chip-contrast"></span>
+        <span class="chip" id="chip-sepia"></span>
+      </div>
+
+      <div class="feedback" id="feedback">
+        <p class="feedback-title">O feedback treina a mini rede neural localmente:</p>
+        <div class="feedback-row">
+          <button id="fb-light" class="soft" title="A rede reduz o brilho da proxima predicao">Ficou claro demais</button>
+          <button id="fb-dark" class="soft" title="A rede aumenta o brilho da proxima predicao">Ficou escuro demais</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="options">
+      <label class="checkbox-line">
+        <input type="checkbox" id="force-theme" checked />
+        <span>Aplicar meu tema mesmo em sites já escuros</span>
+      </label>
+      <label class="checkbox-line">
+        <input type="checkbox" id="smart-images" checked />
+        <span>IA analisa cada imagem (ícones escuros ficam visíveis)</span>
+      </label>
+      <label class="checkbox-line">
+        <input type="checkbox" id="invert-media" checked />
+        <span>Manter fotos e vídeos com as cores originais</span>
+      </label>
+    </section>
+
+    <footer>
+      <span class="hint">Alt+Shift+D alterna tudo</span>
+      <button id="reset" class="ghost">Restaurar padrões</button>
+    </footer>
+  </main>
+
+  <script src="weights-page.js"></script>
+  <script src="weights-images.js"></script>
+  <script src="nn.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
