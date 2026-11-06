@@ -38,6 +38,10 @@
 
     <section class="options">
       <label class="checkbox-line">
+        <input type="checkbox" id="element-mode" checked />
+        <span>Análise por elemento (mais fiel em páginas híbridas)</span>
+      </label>
+      <label class="checkbox-line">
         <input type="checkbox" id="force-theme" checked />
         <span>Aplicar meu tema mesmo em sites já escuros</span>
       </label>
@@ -54,6 +58,8 @@
         <span>Manter fotos e vídeos com as cores originais</span>
       </label>
     </section>
+
+    <button id="export-data" class="ghost" title="Baixa um JSON com as análises reais feitas neste navegador (alimento para o retreino da IA)">Exportar dados de navegação</button>
 
     <footer>
       <span class="hint">Alt+Shift+D alterna tudo</span>
