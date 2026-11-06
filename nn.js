@@ -1,6 +1,6 @@
 "use strict";
 
-// Motores das mini redes neurais da extensao Darl Dark.
+// Motores das mini redes neurais da Extensão Dark com IA.
 //
 // Rede da pagina (weights-page.js -> DARL_PAGE_WEIGHTS):
 //   MLP 32 -> 24 (tanh) -> 16 (tanh) -> 6 (sigmoid)
