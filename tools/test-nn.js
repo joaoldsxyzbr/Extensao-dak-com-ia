@@ -311,6 +311,38 @@ const ghGrad = DE.guardDecls(null, "linear-gradient(rgb(255, 255, 255), rgb(240,
 expect(ghGrad.length === 1 && ghGrad[0].startsWith("background-image:"),
   "guarda: gradiente de hover claro vira escuro", ghGrad[0].slice(0, 60));
 
+// ---------------------------------------------- acentos vivos (v4.3.2)
+// A bolinha de presenca e um dot minusculo e saturado: a cor viva E o sinal
+// visual. O remapeamento normal a apagaria (verde claro = "fundo claro").
+expect(DE.isAccentColor({ r: 45, g: 228, b: 165, a: 1 }) === true,
+  "acento: verde de presenca vivo e acento", "rgb(45,228,165)");
+expect(DE.isAccentColor({ r: 238, g: 238, b: 238, a: 1 }) === false,
+  "acento: cinza claro NAO e acento (e so um fundo pequeno)");
+expect(DE.isAccentColor({ r: 26, g: 35, b: 126, a: 1 }) === false,
+  "acento: azul escuro abaixo do limiar de clareza nao e acento");
+expect(DE.isAccentColor({ r: 255, g: 235, b: 59, a: 0.02 }) === false,
+  "acento: quase transparente nao e acento");
+expect(DE.isAccentSize(10, 10) === true && DE.isAccentSize(28, 28) === false &&
+  DE.isAccentSize(0, 0) === false,
+  "acento: so elementos minusculos (ate 14px) contam como dot/badge");
+
+// sem a regra, o verde seria escurecido (o bug da bolinha apagada):
+const greenDim = DE.mapBackground({ r: 45, g: 228, b: 165, a: 1 });
+expect(lumCss(greenDim.css) < 0.2,
+  "acento: sem preservacao o verde viraria apagado (documenta o bug)", greenDim.css);
+
+// guarda de interacao respeita o acento: hover na bolinha nao a escurece
+const ghAccent = DE.guardDecls({ r: 45, g: 228, b: 165, a: 1 }, "none", null, true);
+expect(ghAccent.length === 0, "guarda: acento vivo com keepBg mantem a cor original");
+const ghAccentNoKeep = DE.guardDecls({ r: 45, g: 228, b: 165, a: 1 }, "none", null, false);
+expect(ghAccentNoKeep.length === 1 && ghAccentNoKeep[0].startsWith("background-color:"),
+  "guarda: sem keepBg o acento seria remapeado", String(ghAccentNoKeep.length));
+
+// teto do motor (v4.3.2): a visao de conversa do Rocket.Chat passa de 8000
+// elementos e ficava METADE remapeada (o pior estado). 30000 cobre chats reais.
+expect(DE.MAX_ELEMENTS === 30000,
+  "motor: teto de elementos cobre chats SPA grandes", String(DE.MAX_ELEMENTS));
+
 // ----------------------------------- rotulagem de dados reais (v4.3)
 // O crawler coleta paginas reais; o rotulo vem da aparencia original
 // (auto-labeling perceptual). Sem confianca, o registro fica de fora.
