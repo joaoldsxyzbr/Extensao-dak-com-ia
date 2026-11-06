@@ -6,6 +6,7 @@ const DEFAULTS = {
   smartImages: true,
   forceTheme: true,
   svgFilter: false,
+  elementMode: true,
 };
 
 // Chaves de schemas antigos que nao existem mais (v1.0: filtros globais;
@@ -37,4 +38,37 @@ chrome.commands.onCommand.addListener(async (command) => {
   if (command !== "toggle") return;
   const stored = await chrome.storage.sync.get(DEFAULTS);
   await chrome.storage.sync.set({ enabled: !stored.enabled });
+});
+
+// Exportacao dos dados de navegacao (features + decisoes da IA): o usuario
+// baixa um JSON local com o que a extensao viu - materia-prima para o
+// retreino com dados reais. Nada sai da maquina sem esse clique.
+chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+  if (!msg || msg.type !== "darl-export-data") return undefined;
+  (async () => {
+    try {
+      const res = await chrome.storage.local.get({ dataLog: [] });
+      const records = Array.isArray(res.dataLog) ? res.dataLog : [];
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        note: "Extensao Dark com IA - analises reais de navegacao (host, features, decisao). Retreino: tools/.",
+        records,
+      };
+      const json = JSON.stringify(payload, null, 2);
+      // btoa nao aceita unicode direto: codifica os bytes em pedacos
+      // (spread de array grande estoura a pilha).
+      const bytes = new TextEncoder().encode(json);
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 8192) {
+        bin += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      }
+      const b64 = btoa(bin);
+      const url = "data:application/json;base64," + b64;
+      await chrome.downloads.download({ url, filename: "darl-dados-navegacao.json", saveAs: true });
+      sendResponse({ ok: true, count: records.length });
+    } catch (err) {
+      sendResponse({ ok: false, error: String(err) });
+    }
+  })();
+  return true; // resposta assincrona
 });
