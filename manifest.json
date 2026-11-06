@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Extensão Dark com IA",
-  "version": "4.3.1",
+  "version": "4.3.2",
   "description": "Modo escuro dirigido por mini redes neurais: a IA lê cada página e decide tudo.",
   "permissions": ["storage", "activeTab", "downloads"],
   "action": {
