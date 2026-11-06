@@ -2,7 +2,7 @@
 
 ## O que é este projeto
 
-Darl Dark é uma extensão Chrome (Manifest V3) de modo escuro, dirigida por três mini
+A Extensão Dark com IA é uma extensão Chrome (Manifest V3) de modo escuro, dirigida por três mini
 redes neurais que rodam inteiramente local — JS puro, zero dependências, zero servidor.
 Decisão arquitetural da v2.0.0: a extensão é **inference-only**. Todo treino acontece
 offline, pelos treinadores em `tools/`; a extensão apenas executa os pesos.
