@@ -61,6 +61,15 @@ treino offline (tools/train-*.js, pipeline nnlab: Adam, cosine LR, weight decay,
 | `tools/generate_icons.py` | Gera os ícones PNG (sem dependências) |
 | `tools/test-nn.js` | Testes das três redes, matrizes SVG e calibração |
 
+## Documentação
+
+| Documento | Para quem |
+|---|---|
+| [AGENTS.md](AGENTS.md) | Agentes de código (e humanos) trabalhando no repositório: regras de ouro, comandos, como ajustar a IA |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | O detalhado: features, mapeamentos, motores de cor, fluxos e decisões de projeto |
+| [CHANGELOG.md](CHANGELOG.md) | Histórico completo das versões |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Fluxo de contribuição e report de páginas problemáticas |
+
 ## Instalar (desenvolvedor)
 
 1. Abra `chrome://extensions`
