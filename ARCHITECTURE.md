@@ -10,7 +10,7 @@ carregamento da página (document_start)
  ├─ boot cover anti-flash (html.darl-boot, tampa escura, ≤450ms)
  ├─ cache do host (última decisão da IA) → tema provisório imediato
  └─ DOM pronto → extração de 32 features
-      → REDE 1 (páginas, 32→24→16→6)
+      → REDE 1 (páginas, 32→32→24→6)
            ├─ decide: inverter | retoque escuro | não mexer
            ├─ knobs: brilho, contraste, sépia, dim, tint
            ├─ site já escuro? pula (ou retoque, se forceTheme) 
@@ -28,7 +28,7 @@ rede). A extensão é **inference-only**: todo treino é offline (ver
 
 ## As três redes
 
-### Rede 1 — páginas (32 → 24 → 16, tanh → 6, sigmoid)
+### Rede 1 — páginas (32 → 32 → 24, tanh → 6, sigmoid)
 
 Entradas (ordem canônica, idêntica ao treinador e aos testes):
 
