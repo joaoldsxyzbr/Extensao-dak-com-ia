@@ -79,8 +79,11 @@ No duelo local contra a MLP v3, a floresta venceu: MSE 0.00019 vs 0.00116,
 confiança do caso PRADO 1.00 vs 0.97 — e árvores são o formato natural para
 engolir os dados reais do crawler sem retrabalho. Desde a v4.3.0 o treino soma
 páginas reais do `crawl-real` (`tools/dev/data/report-*.json`, auto-rotuladas
-por `tools/load-real-data.js` com peso 8 cada); holdout e gates continuam
-sintéticos e determinísticos para comparar versões entre si.
+por `tools/load-real-data.js` com peso 8 cada); desde a v4.3.1 híbridos de
+aparência (screenshot na zona cinza) são desambiguados pelo conteúdo medido
+por elemento — elementos claros + texto escuro inverte, elementos escuros +
+texto claro não mexe — e o que continua ambíguo é descartado. Holdout e gates
+continuam sintéticos e determinísticos para comparar versões entre si.
 
 ### Rede 2 — imagens (6 → 12 → 1)
 
