@@ -14,12 +14,21 @@ const fs = require("fs");
 const path = require("path");
 const dataset = require("./page-dataset.js");
 const gbdt = require("./gbdt.js");
+const loadReal = require("./load-real-data.js");
 const { ARCHETYPES, genDataset, archVector } = dataset;
 
-// ---- mesmos dados, mesma ordem de chamadas que o train-page-model.js
+// ---- dados: arquétipos sintéticos + REAIS do crawler (auto-rotulados).
+// Os registros reais (tools/dev/data/report-*.json, commitados pelo job
+// crawl-real do CI) são somados ao TREINO com peso; holdout e gates
+// continuam sintéticos e determinísticos para comparar versões.
 const trainData = genDataset(6000, 101);
+const realRecords = loadReal.collect(path.join(__dirname, "dev", "data"));
+const REAL_WEIGHT = 8; // cada página real vale por ~8 sintéticas
+for (const r of realRecords) {
+  for (let i = 0; i < REAL_WEIGHT; i++) trainData.push({ x: r.x, y: r.y });
+}
 const valData = genDataset(1500, 909);
-console.log(`GBDT de paginas: ${trainData.length} treino / ${valData.length} validacao`);
+console.log(`GBDT de paginas: ${trainData.length} treino (${realRecords.length} reais x${REAL_WEIGHT}) / ${valData.length} validacao`);
 
 const t0 = Date.now();
 const model = gbdt.train(trainData, valData, {
