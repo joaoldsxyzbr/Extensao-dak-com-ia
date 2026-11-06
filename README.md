@@ -10,7 +10,7 @@ página carrega (com tampa escura anti-flash desde o document_start)
 → content.js extrai 32 features (histograma de luminância, frações
   escura/clara, contraste do texto, saturação vívida, fontes mono/título/pequenas,
   position fixed, marcadores semânticos: article nav table form mídia...)
-→ rede de páginas (32 → 24 → 16 → 6) em nn.js
+→ rede de páginas (32 → 32 → 24 → 6) em nn.js
 → decisões: inverter / retoque escuro / não mexer + brilho, contraste, sépia, dim, tint
 → em páginas invertidas: rede de regiões (8 → 12 → 1) neutraliza a inversão em
   blocos escuros grandes (header, footer, hero, card de código)
@@ -30,9 +30,12 @@ treino offline (tools/train-*.js, pipeline nnlab: Adam, cosine LR, weight decay,
 - Treino 100% offline: a extensão é inference-only. Os pesos das três redes são
   gerados pelos treinadores (validados em holdout, com temperatura calibrada),
   embarcados em `weights-*.js` e apenas executados no navegador.
-- O modelo v2 entende seis arquétipos de página e saídas contínuas: site claro comum,
-  página branca dura (docs), notícias creme, site já escuro, dashboard escuro
-  saturado e páginas mistas — com dim e tint calibrados por arquétipo.
+- O modelo v3 entende 14 arquétipos de página e saídas contínuas: site claro
+  comum, página branca dura (docs), notícias creme, páginas mistas, app de
+  mensagens híbrido (painel escuro + chat claro), e-commerce, buscador
+  minimalista, feed social, longa-leitura, galeria de mídia, site escuro
+  bruto, dashboard escuro saturado, tema escuro bem desenhado (Telegram/
+  Discord/GitHub dark) e AMOLED preto puro — com dim e tint por arquétipo.
 - Só a IA decide: não existe ajuste manual por site. Há apenas chaves globais
   (forçar tema, análise de imagens, restaurar mídias, modo SVG) e o interruptor
   geral. A "confiança 98%" do popup é calibrada por temperatura (Guo et al. 2017)
