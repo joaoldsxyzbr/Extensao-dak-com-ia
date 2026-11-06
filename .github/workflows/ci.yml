@@ -101,6 +101,8 @@ jobs:
     # dispara a coleta na hora (ex.: lista de sites atualizada).
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[crawl]'))
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # commita o dataset de volta no repo (retreino local)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -116,6 +118,21 @@ jobs:
       - name: Crawler nos sites reais
         working-directory: tools/dev
         run: node crawl.js --sites sites.txt
+
+      - name: Registrar dataset no repositorio (retreino local)
+        # O retreino e offline, no ambiente do mantenedor: o dataset precisa
+        # voltar pro repo porque o download de artefato do Actions exige auth.
+        if: always() && github.event_name != 'schedule'
+        working-directory: tools/dev
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir -p data
+          cp out/report.json "data/report-$(date -u +%Y-%m-%d).json"
+          git add data
+          git commit -m "chore(dados): dataset do crawl real de $(date -u +%F) [skip ci]" || echo "nada novo a registrar"
+          git pull --rebase origin main
+          git push
 
       - name: Publicar dataset da semana
         if: always()
