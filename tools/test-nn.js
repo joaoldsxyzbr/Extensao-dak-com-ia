@@ -343,6 +343,26 @@ expect(ghAccentNoKeep.length === 1 && ghAccentNoKeep[0].startsWith("background-c
 expect(DE.MAX_ELEMENTS === 30000,
   "motor: teto de elementos cobre chats SPA grandes", String(DE.MAX_ELEMENTS));
 
+// ------------------------------------------- varredura sem travar (v4.3.3)
+// SPAs gigantes (Rocket.Chat) mutam sem parar: a fila da varredura e
+// alimentada pelo observer, nunca por reconsulta da pagina inteira.
+expect(DE.isQueueableNode({ nodeType: 1, tagName: "DIV", id: "" }) === true,
+  "fila: elemento comum entra na varredura");
+expect(DE.isQueueableNode({ nodeType: 1, tagName: "SCRIPT", id: "" }) === false,
+  "fila: script/style/meta fora da varredura");
+expect(DE.isQueueableNode({ nodeType: 3, tagName: undefined, id: "" }) === false,
+  "fila: no de texto fora da varredura");
+expect(DE.isQueueableNode({ nodeType: 1, tagName: "DIV", id: "darl-element-style" }) === false &&
+  DE.isQueueableNode({ nodeType: 1, tagName: "DIV", id: "darl-dark-style" }) === false,
+  "fila: estilos da propria extensao fora da varredura");
+// contrato anti-travamento: flush de regras com intervalo minimo (cada flush
+// custa um recalculo de estilo da pagina inteira) e guarda com recheck
+// espaçado (mousemove dispara dezenas de eventos por segundo).
+expect(DE.FLUSH_MS >= 400, "motor: flush de regras espaçado (anti-travamento)",
+  String(DE.FLUSH_MS));
+expect(DE.GUARD_RECHECK_MS >= 1000, "guarda: recheck por elemento espaçado (anti-travamento)",
+  String(DE.GUARD_RECHECK_MS));
+
 // ----------------------------------- rotulagem de dados reais (v4.3)
 // O crawler coleta paginas reais; o rotulo vem da aparencia original
 // (auto-labeling perceptual). Sem confianca, o registro fica de fora.
