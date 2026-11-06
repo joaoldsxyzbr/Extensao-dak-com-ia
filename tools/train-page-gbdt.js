@@ -2,7 +2,7 @@
 // Executar: node tools/train-page-gbdt.js [--write]
 //
 // Treina o gradient boosting multi-saida (tools/gbdt.js, JS puro) no MESMO
-// dataset do pipeline nnlab (tools/page-dataset.js: 14 arquetipos + jitter,
+// dataset do pipeline nnlab (tools/page-dataset.js: 15 arquetipos + jitter,
 // hoje sinteticos; registros reais do crawler podem ser somados aqui).
 // Portao de elegibilidade identico ao do train-page-model.js: holdout >=
 // 99.5%, todos os arquetipos certos e casos-chave decisivos. Com --write,
@@ -66,6 +66,15 @@ const DARKARCH = vec({ htmlBg: 0.07, meanBg: 0.11, h0: 0.55, h1: 0.25, fracWithB
   fracDark: 0.82, textLum: 0.8, contrast: 0.78, satMean: 0.28, fontMean: 0.55,
   smallUi: 0.3, mediaN: 0.5, metaDark: 1 });
 
+// Caso real exportado do dataLog (chat.pradoapp.com, Rocket.Chat, 06/11/2026):
+// casca escura + painel branco de conteudo. Antes do arquétipo CHAT_HYBRID a
+// floresta dizia "retoque" (p(inverter)=0.06) e o chat ficava claro.
+const ROCKET = [
+  0.202, 0.213, 0.002, 0.971, 0.008, 0.005, 0, 0.011, 0, 0.005,
+  0.058, 0.972, 0.005, 0.598, 0.959, 0.398, 0.339, 0.263, 0.263, 0.011,
+  0.005, 0, 0.5, 0, 0.074, 0.002, 0, 0, 0, 0, 0, 0,
+];
+
 // temperatura: calibra o logit da saida 0 contra o holdout (Guo et al.)
 function fitTemp() {
   let bestT = 1, bestNll = Infinity;
@@ -89,8 +98,10 @@ const cal = (p, T) => {
 };
 const pradoG = cal(model.predict(PRADO)[0], gbdtTemp);
 const tgG = cal(model.predict(TG)[0], gbdtTemp);
+const rocketG = cal(model.predict(ROCKET)[0], gbdtTemp);
 console.log(`  PRADO conf:       ${pradoG.toFixed(2)}  (min 0.75, inverter)`);
 console.log(`  TELEGRAM p(inv):  ${tgG.toFixed(2)}  (max 0.25, nao inverter)`);
+console.log(`  ROCKET conf:      ${rocketG.toFixed(2)}  (min 0.75, inverter)`);
 console.log(`  LIGHT inverte:    ${model.predict(LIGHT)[0].toFixed(2)}`);
 console.log(`  DARK nao inverte: ${model.predict(DARKARCH)[0].toFixed(2)}`);
 
@@ -107,7 +118,7 @@ const eligible =
   fails === 0 &&
   acc / valData.length >= 0.995 &&
   mse <= 0.001 &&
-  pradoG >= 0.75 && tgG <= 0.25;
+  pradoG >= 0.75 && tgG <= 0.25 && rocketG >= 0.75;
 
 if (process.argv.includes("--write")) {
   if (!eligible) {
