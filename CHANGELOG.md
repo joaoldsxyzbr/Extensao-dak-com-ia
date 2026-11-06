@@ -2,6 +2,29 @@
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
 
+## [3.0.0] — modelo de páginas v3: 14 arquétipos + reanálise estável
+
+### Corrigido
+- Extração de features imune aos estilos da própria extensão: a tampa
+  anti-flash escura (primeira análise) e o fundo branco do modo inversão
+  (reanálises) poluíam o htmlBg e o histograma — a causa de "reanalisar
+  piora". A extração agora lê sempre a página original.
+
+### Alterado
+- Rede de páginas ampliada de 32→24→16 para 32→32→24 com pesos retreinados
+  no pipeline nnlab (holdout 100% na decisão de inverter).
+- Pesos da v2.2.0 estavam desatualizados em relação ao treinador expandido:
+  a suíte estava vermelha (4 falhas) e o CI da main quebrado. Agora pesos,
+  treinador e testes estão consistentes.
+
+### Adicionado
+- Arquétipos novos no treinador (totais 14): SHOP, SEARCH_MIN, SOCIAL_FEED,
+  LONGFORM, GALLERY, DARK_POLISHED e OLED_BLACK — mensagens híbridas, lojas,
+  buscadores, feeds, longa-leitura, galerias, temas escuros bem desenhados
+  (Telegram/Discord/GitHub dark, retoque quase identidade) e AMOLED.
+- Casos-chave nos testes: PRADO (híbrido pesado, confiança antes ~67%) e
+  TELEGRAM_DARK (tema nativo escuro, antes ~47% na fronteira da decisão).
+
 ## [2.2.0]
 
 ### Adicionado
