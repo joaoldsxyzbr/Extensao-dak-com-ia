@@ -19,7 +19,7 @@
   const STYLE_ID = "darl-element-style";
   const MARK_ATTR = "darl-el";
   const GUARD_ATTR = "darl-guard"; // elemento ja coberto pela guarda de interacao
-  const MAX_ELEMENTS = 8000; // acima disso: fallback para modo filtro (v4.1: chats SPAs como Rocket.Chat passam de 4000)
+  const MAX_ELEMENTS = 30000; // acima disso: fallback para modo filtro (v4.3.2: a visao de conversa do Rocket.Chat passa de 8000 e ficava meio remapeada - o pior estado possivel)
   const BATCH = 120;
   const RESCAN_MS = 1500;
 
@@ -70,6 +70,43 @@
   const BG_LIGHT = 0.28; // acima disso, fundo escurece
   const TEXT_DARK = 0.50; // abaixo disso, texto clareia
   const CANVAS_L = 0.12; // luminancia do canvas mapeado (html padrao)
+
+  // Acentos pequenos e saturados (v4.3.2): a bolinha verde de presenca, o
+  // badge de nao lidas etc. sao SINAIS - a cor viva e o significado. O
+  // remapeamento normal os trataria como "fundo claro" e viraria um verde
+  // apagado. Regra: elemento minusculo com cor clara e saturada mantem a
+  // cor original (a pagina invertida e escura: o acento destaca sozinho).
+  const ACCENT_SAT = 0.30; // saturacao minima de um acento vivo
+  const ACCENT_MAX_PX = 14; // maior lado (px) que ainda conta como dot/badge
+
+  function saturation255(r, g, b) {
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+    return mx === 0 ? 0 : (mx - mn) / mx;
+  }
+
+  // Pura: cor clara e saturada = acento candidato (verde de presenca, laranja
+  // de badge). Cinza claro nao e acento (e so um fundo pequeno).
+  function isAccentColor(c) {
+    return Boolean(c) && c.a > 0.04 &&
+      saturation255(c.r, c.g, c.b) >= ACCENT_SAT &&
+      lum255(c.r, c.g, c.b) >= BG_LIGHT;
+  }
+
+  // Pura: so elementos minusculos (dot/badge) podem manter a cor viva.
+  function isAccentSize(w, h) {
+    return w > 0 && h > 0 && Math.max(w, h) <= ACCENT_MAX_PX;
+  }
+
+  // Mede o elemento na tela: so chama depois de isAccentColor passar
+  // (getBoundingClientRect forca layout; nao pode custar em todo scan).
+  function isAccentRect(el) {
+    try {
+      const rect = el.getBoundingClientRect();
+      return isAccentSize(rect.width, rect.height);
+    } catch {
+      return false;
+    }
+  }
 
   // Fundo claro -> escuro mantendo matiz (branco -> ~#202020, nao #000).
   function mapBackground(c) {
@@ -162,6 +199,7 @@
   let active = false;
   let styleEl = null;
   let styleText = "";
+  let flushedLen = 0; // quanto do styleText ja esta no DOM (flush incremental)
   let markId = 0;
   let guardId = 0;
   let guardListeners = null;
@@ -184,11 +222,17 @@ html { background-color: #17181d !important; color-scheme: dark !important; }
 img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; }
 @media print { [${MARK_ATTR}], [${GUARD_ATTR}] { background-color: revert !important; color: revert !important; border-color: revert !important; } html { background-color: revert !important; } }`;
     styleEl.textContent = styleText;
+    flushedLen = styleText.length;
     return styleEl;
   }
 
+  // Flush incremental (v4.3.2): paginas gigantes geram dezenas de milhares de
+  // regras; reescrever o <style> inteiro a cada lote seria quadratico. So o
+  // delta novo entra no DOM.
   function flushStyle() {
-    if (styleEl && styleEl.textContent !== styleText) styleEl.textContent = styleText;
+    if (!styleEl || styleText.length <= flushedLen) return;
+    styleEl.appendChild(document.createTextNode(styleText.slice(flushedLen)));
+    flushedLen = styleText.length;
   }
 
   // ------------------------------------------------------------ varredura
@@ -198,20 +242,28 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     const parts = [];
 
     const bg = DarlFeatures.parseRGB(cs.backgroundColor);
+    const fg = DarlFeatures.parseRGB(cs.color);
+    const needsText = el.childNodes && Array.prototype.some.call(el.childNodes, (n) => n.nodeType === 3 && n.textContent.trim()) || TEXTISH.has(el.tagName);
+    const fgDark = Boolean(fg) && needsText && lum255(fg.r, fg.g, fg.b) <= TEXT_DARK;
+
     let bgLum = bgLumDefault;
     if (bg && bg.a > 0.04) {
       const bl = lum255(bg.r, bg.g, bg.b);
       if (bl >= BG_LIGHT) {
-        const m = mapBackground(bg);
-        parts.push(`background-color: ${m.css} !important`);
-        bgLum = m.lum;
+        // Acento vivo (bolinha de presenca, badge): minusculo + saturado sem
+        // texto escuro proprio -> mantem a cor ORIGINAL. O resto escurece.
+        if (!fgDark && isAccentColor(bg) && isAccentRect(el)) {
+          bgLum = bl; // a cor viva ficou: textos herdeiros medem contra ela
+        } else {
+          const m = mapBackground(bg);
+          parts.push(`background-color: ${m.css} !important`);
+          bgLum = m.lum;
+        }
       } else if (bg.a >= 0.98) {
         bgLum = bl; // fundo ja escuro: textos devem se medir contra ele
       }
     }
 
-    const fg = DarlFeatures.parseRGB(cs.color);
-    const needsText = el.childNodes && Array.prototype.some.call(el.childNodes, (n) => n.nodeType === 3 && n.textContent.trim()) || TEXTISH.has(el.tagName);
     if (fg && needsText) {
       const fl = lum255(fg.r, fg.g, fg.b);
       if (fl <= TEXT_DARK) {
@@ -337,9 +389,10 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
 
   // Pura: dado o estado computado AGORA (com hover/foco ativo), devolve
   // as declaracoes que congelam o remapeamento escuro. Testavel sem DOM.
-  function guardDecls(bg, bgImage, fg) {
+  // keepBg (v4.3.2): acento vivo identificado pelo chamador - o fundo fica.
+  function guardDecls(bg, bgImage, fg, keepBg) {
     const out = [];
-    if (bg && bg.a > 0.04 && lum255(bg.r, bg.g, bg.b) >= BG_LIGHT) {
+    if (!keepBg && bg && bg.a > 0.04 && lum255(bg.r, bg.g, bg.b) >= BG_LIGHT) {
       out.push(`background-color: ${mapBackground(bg).css} !important`);
     }
     if (typeof bgImage === "string" && bgImage.includes("gradient(")) {
@@ -357,9 +410,16 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     if (SKIP_TAGS.has(el.tagName) || el.id === STYLE_ID || el.id === "darl-dark-style" || el.id === "darl-flash-cover" || el.id === "darl-svg-host") return;
     if (el.hasAttribute(GUARD_ATTR)) return; // ja coberto
     let decls = [], before = [], after = [];
+    let keepBg = false;
     try {
       const cs = getComputedStyle(el);
-      decls = guardDecls(DarlFeatures.parseRGB(cs.backgroundColor), cs.backgroundImage, DarlFeatures.parseRGB(cs.color));
+      const bgNow = DarlFeatures.parseRGB(cs.backgroundColor);
+      const fgNow = DarlFeatures.parseRGB(cs.color);
+      // Acento vivo (v4.3.2): hover sobre a bolinha de presenca nao pode
+      // congelar um fundo escurecido nela - a cor original e o sinal.
+      const fgDarkNow = Boolean(fgNow) && lum255(fgNow.r, fgNow.g, fgNow.b) <= TEXT_DARK;
+      keepBg = !fgDarkNow && isAccentColor(bgNow) && isAccentRect(el);
+      decls = guardDecls(bgNow, cs.backgroundImage, fgNow, keepBg);
       const pb = getComputedStyle(el, "::before");
       before = guardDecls(DarlFeatures.parseRGB(pb.backgroundColor), pb.backgroundImage, null);
       const pa = getComputedStyle(el, "::after");
@@ -430,6 +490,7 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     onFallback = null;
     if (styleEl) { styleEl.remove(); styleEl = null; }
     styleText = "";
+    flushedLen = 0;
     markId = 0;
     guardId = 0;
     try {
@@ -445,7 +506,8 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     // funcoes puras expostas para os testes (tools/test-nn.js)
     mapBackground, mapText, mapNeutral, remapGradient, remapShadow,
     rgbToHsl, lum255: (r, g, b) => lum255(r, g, b), guardDecls,
-    parseColorList,
+    parseColorList, isAccentColor, isAccentSize, saturation255,
+    ACCENT_SAT, ACCENT_MAX_PX,
     STYLE_ID, MARK_ATTR, GUARD_ATTR, MAX_ELEMENTS,
     _internals: { BG_LIGHT, TEXT_DARK, CANVAS_L, contrastRatio, elementRule, guardInteraction },
   };
