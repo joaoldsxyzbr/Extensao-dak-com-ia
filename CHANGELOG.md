@@ -2,6 +2,40 @@
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
 
+## [4.3.3] — sem travar: varredura guiada por mutações e flush espaçado
+
+### Corrigido
+- **Travamento no chat.pradoapp.com** (SPAs grandes em geral): três
+  gargalos do motor por elemento, expostos quando a v4.3.2 passou a
+  cobrir a página inteira (antes o teto de 8000 jogava a página no
+  filtro — rápido, mas feio):
+  1. **Reconsulta completa do DOM**: a cada mutação (chats React mutam
+     sem parar), o re-scan reconsultava `querySelectorAll("*")` da
+     página inteira (~20 mil nós) a cada 1,5s. Agora o
+     `MutationObserver` alimenta a fila da varredura **direto** com os
+     nós novos e seus descendentes — custo O(novos), não O(página).
+  2. **Recalques de estilo em rajada**: cada lote de regras entrava no
+     `<style>` na hora; cada flush custa um recálculo de estilo da
+     página inteira. Agora as regras acumulam num buffer e entram com
+     **≥ 400 ms de intervalo** (primeiro lote, fim da varredura e
+     guarda de hover furam o intervalo — reveal e hover continuam
+     instantâneos).
+  3. **Guarda de hover em cada mousemove**: `mouseover` dispara dezenas
+     de eventos por segundo e cada check custava `getComputedStyle`
+     no elemento + `::before` + `::after`. Agora cada elemento é
+     rechecado **no máximo a cada 1,5s** (`WeakMap`).
+- `content.js`: reanálise de SPA com **limiar adaptativo** — em páginas
+  gigantes (12 mil nós), ~120 mutações em vez de 40 abrem nova extração
+  de features (a extração custa 400 `getComputedStyle` + recálculo ao
+  religar os `<style>` da extensão). Detecção de troca de tema (YouTube
+  etc.) segue intacta.
+
+### Observado
+- A inferência da rede é microssegundos (floresta GBDT minúscula) — o
+  custo era todo da varredura de estilo, não da IA.
+- Suite: **89 testes** (+6 de fila por mutações e contrato
+  anti-travamento de flush/guarda).
+
 ## [4.3.2] — bolinha de presença viva e cobertura total em chats gigantes
 
 ### Corrigido
