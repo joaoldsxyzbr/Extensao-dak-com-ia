@@ -1,4 +1,4 @@
-// Treinador do modelo de paginas (Darl Dark v3 - pipeline nnlab).
+// Treinador do modelo de paginas (Extensão Dark com IA v3 - pipeline nnlab).
 // Executar: node tools/train-page-model.js
 // Gera ../weights-page.js (com temperatura calibrada).
 //
