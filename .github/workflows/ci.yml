@@ -1,0 +1,28 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Sintaxe de todos os JS
+        run: find . -name "*.js" -exec node --check {} \;
+
+      - name: Suite de regressao das redes
+        run: node tools/test-nn.js
+
+      - name: Treinadores reproduzem os pesos commitados
+        run: |
+          node tools/train-page-model.js
+          node tools/train-region-model.js
+          node tools/train-image-model.js
+          git diff --exit-code -- weights-page.js weights-region.js weights-images.js
