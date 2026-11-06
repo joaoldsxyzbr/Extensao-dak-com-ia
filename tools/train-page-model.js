@@ -62,6 +62,17 @@ const ARCHETYPES = [
     vary: { htmlBg:0.12, meanBg:0.1, fracDark:0.1, fracLight:0.1, lowContrast:0.06,
       colorful:0.08, titleFrac:0.08, metaDark:0.2 },
     y: [1, 0.4, 0.375, 0.1, 0.5, 0.05] },
+  { name: "MESSAGING", w: 0.09, family: "LIGHT", // app de mensagens hibrido: painel lateral escuro + chat claro
+    f: { htmlBg:0.9, meanBg:0.62, h0:0.22, h1:0.08, h2:0.05, h3:0.04, h4:0.05, h5:0.06, h6:0.13, h7:0.37,
+      fracWithBg:0.5, fracDark:0.32, fracLight:0.42,
+      textLum:0.48, lowContrast:0.1, contrast:0.66,
+      satMean:0.3, satHigh:0.18, colorful:0.3,
+      imgFrac:0.04, bgImgFrac:0.03, mono:0.02,
+      fontMean:0.45, titleFrac:0.04, smallUi:0.3, fixedFrac:0.18,
+      articleN:0.05, navN:0.5, tableN:0.02, formN:0.35, mediaN:0.25, metaDark:0.05 },
+    vary: { htmlBg:0.04, h0:0.08, h7:0.1, fracDark:0.08, fracLight:0.08, textLum:0.08,
+      satMean:0.06, colorful:0.06, smallUi:0.08, fixedFrac:0.06, navN:0.15, formN:0.1 },
+    y: [1, 0.42, 0.30, 0.05, 0.5, 0.08] },
   { name: "DARK", w: 0.22, family: "DARK", // site ja escuro
     f: { htmlBg:0.07, meanBg:0.11, h0:0.55, h1:0.25, fracWithBg:0.5, fracDark:0.82, fracLight:0.02,
       textLum:0.8, lowContrast:0.07, contrast:0.78, satMean:0.28, satHigh:0.15, colorful:0.2,
