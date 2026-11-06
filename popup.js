@@ -179,6 +179,44 @@ function wire() {
   });
 
 
+  // Copia o dump de treino (features reais + decisao da IA) desta aba.
+  $("dump").addEventListener("click", async () => {
+    const btn = $("dump");
+    const oldText = btn.textContent;
+    try {
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      if (!tab || tab.id < 0) throw new Error("sem aba ativa");
+      const dump = await chrome.tabs.sendMessage(tab.id, { type: "darl-dump" });
+      if (!dump || !dump.ok || !Array.isArray(dump.features)) throw new Error("sem analise desta pagina");
+      const payload = {
+        type: "darl-page-dump",
+        ext_version: chrome.runtime.getManifest().version,
+        host: dump.host,
+        path: dump.path,
+        features: dump.features.map((v) => Math.round(v * 1000) / 1000),
+        decision: dump.applied,
+      };
+      const text = JSON.stringify(payload);
+      let copied = false;
+      try {
+        await navigator.clipboard.writeText(text);
+        copied = true;
+      } catch {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        copied = document.execCommand("copy");
+        ta.remove();
+      }
+      if (!copied) throw new Error("area de transferencia");
+      btn.textContent = "Copiado!";
+    } catch {
+      btn.textContent = "Não foi possível copiar";
+    }
+    setTimeout(() => { btn.textContent = oldText; }, 1800);
+  });
+
   $("reset").addEventListener("click", async () => {
     await chrome.storage.sync.set(DEFAULT_SETTINGS);
     settings = { ...DEFAULT_SETTINGS };
