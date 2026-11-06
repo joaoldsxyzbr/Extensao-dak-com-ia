@@ -2,7 +2,12 @@
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
 
-## [Não lançado]
+## [2.1.0]
+
+### Adicionado
+- Botão "Copiar dados da análise" no popup: copia para a área de transferência
+  o vetor de 32 features da página atual e a decisão da IA (JSON) — gera dados
+  de treino reais a partir de qualquer site.
 
 ### Alterado
 - Nome do projeto corrigido de "Darl Dark" para "Extensão Dark com IA"
