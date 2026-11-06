@@ -116,10 +116,16 @@ matiz (branco → ~#1b1b1b, nunca preto puro), texto escuro vira claro com guard
 de contraste WCAG AA (≥ 4.5:1 contra o fundo mapeado), bordas/sombras/gradientes
 são remapeadas junto, `fill`/`stroke` de SVG também. Elementos ganham o atributo
 `darl-el` e regras `!important` num `<style>` próprio (flush incremental:
-só o delta de regras entra no DOM); a varredura é incremental
-(lotes de ~120 via `requestIdleCallback`, teto de 30000 elementos — v4.3.2:
-a visão de conversa do Rocket.Chat passa de 8000 e ficava metade remapeada —,
-re-scan throttled de 1.5s para SPAs). Fotos e vídeos ficam intactos por construção —
+só o delta entra no DOM, e **throttled** — ≥ 400 ms entre flushes, v4.3.3:
+cada flush custa um recálculo de estilo da página inteira; primeiro lote,
+fim da varredura e guarda de hover furam o intervalo). A varredura é
+incremental: página inteira **uma vez** no load e, a partir daí, fila
+alimentada pelo `MutationObserver` (v4.3.3 — nós novos e seus
+descendentes entram direto na fila; antes o re-scan reconsultava o DOM
+inteiro a cada 1.5s e travava SPAs que mutam sem parar, como chats React);
+lotes de ~120 via `requestIdleCallback`, teto de 30000 elementos — v4.3.2:
+a visão de conversa do Rocket.Chat passa de 8000 e ficava metade remapeada.
+Fotos e vídeos ficam intactos por construção —
 não existe inversão global para reverter. `color-scheme: dark` no `<html>` escurece
 controles nativos e barras de rolagem. Acima do teto ou em erro: fallback
 automático para o modo filtro, **lacrado** até a próxima navegação (`engineFellBack`
@@ -131,6 +137,9 @@ visual; o remapeamento normal os apagaria. É o motor que resolve páginas híbr
 escura + chat claro) sem rede de regiões. Estados de interação (`:hover`,
 `:focus`) e pseudo-elementos não existem no estilo computado em repouso: a
 **guarda de interação** (v4.2) observa `mouseover`/`focusin` no documento e,
+**por elemento no máximo a cada 1.5s** (v4.3.3 — `mousemove` dispara dezenas
+de eventos por segundo e cada check custa `getComputedStyle` no elemento e
+nos pseudo-elementos), congela o
 se o elemento sob o ponteiro estiver claro naquele instante, congela o
 remapeamento escuro numa regra permanente (`[darl-guard="N"]`) — cobre cores
 via `var()` e estilos inline trocados por JS, pois lê o valor já resolvido.
