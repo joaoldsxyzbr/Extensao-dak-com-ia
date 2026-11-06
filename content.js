@@ -1,6 +1,6 @@
 "use strict";
 
-// Darl Dark - content script.
+// Extensão Dark com IA - content script.
 // Extrai features da pagina, roda a mini rede neural (nn.js) e aplica o tema.
 // Nao existe ajuste manual: a rede decide tudo (e aprende com o feedback do popup).
 
@@ -522,7 +522,7 @@ function refresh() {
     queueImages();
   } catch (err) {
     // Nunca deixar a analise quebrar a pagina de hospedagem.
-    console.warn("Darl Dark: falha ao aplicar tema", err);
+    console.warn("Extensão Dark com IA: falha ao aplicar tema", err);
   }
 }
 
