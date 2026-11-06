@@ -110,7 +110,7 @@ matiz (branco → ~#1b1b1b, nunca preto puro), texto escuro vira claro com guard
 de contraste WCAG AA (≥ 4.5:1 contra o fundo mapeado), bordas/sombras/gradientes
 são remapeadas junto, `fill`/`stroke` de SVG também. Elementos ganham o atributo
 `darl-el` e regras `!important` num `<style>` próprio; a varredura é incremental
-(lotes de ~120 via `requestIdleCallback`, teto de 4000 elementos, re-scan
+(lotes de ~120 via `requestIdleCallback`, teto de 8000 elementos, re-scan
 throttled de 1.5s para SPAs). Fotos e vídeos ficam intactos por construção —
 não existe inversão global para reverter. `color-scheme: dark` no `<html>` escurece
 controles nativos e barras de rolagem. Acima do teto ou em erro: fallback
