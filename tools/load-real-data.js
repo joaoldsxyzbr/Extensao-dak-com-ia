@@ -7,7 +7,12 @@
 // Regra de rotulagem (conservadora de proposito):
 //   - claro (meanLum alto, pouco escuro)  -> inverter (familia LIGHT)
 //   - escuro (meanLum baixo, muito escuro) -> retoque (familia DARK)
-//   - hibrido/ambiguo OU pagina em branco (lumStd baixo = erro de carga,
+//   - hibrido de APARENCIA (screenshot na zona cinza: hero colorido, muitas
+//     midias) -> desambiguado pelo CONTEUDO (v4.3.1): features por elemento
+//     dizem a verdade que a media de pixels nao diz —
+//       elementos claros + texto escuro  -> claro (inverte; imagens ficam)
+//       elementos escuros + texto claro  -> escuro (nao mexe)
+//   - ainda ambiguo, OU pagina em branco (lumStd baixo = erro de carga,
 //     paywall, bloqueio de bot) -> DESCARTADO: rotulo sem confianca nao
 //     entra no treino.
 //
@@ -31,6 +36,17 @@ const LIGHT_DARKFRAC = 0.35;
 const DARK_MEANLUM = 0.25;
 const DARK_DARKFRAC = 0.55;
 
+// Desambiguacao dos hibridos de aparencia pelo conteudo (v4.3.1). A media
+// de pixels mente sobre paginas claras cheias de imagens/hero colorido; a
+// leitura por elemento nao. Indices = ordem canonica (page-dataset.js ORDER2).
+const F_FRAC_DARK = 11;
+const F_FRAC_LIGHT = 12;
+const F_TEXT_LUM = 13;
+const HYBRID_LIGHT_FRACLIGHT = 0.85; // quase todos os elementos claros...
+const HYBRID_LIGHT_TEXTLUM = 0.5; // ...com texto escuro = conteudo claro
+const HYBRID_DARK_FRACDARK = 0.85; // quase todos os elementos escuros...
+const HYBRID_DARK_TEXTLUM = 0.6; // ...com texto claro = conteudo escuro
+
 // Pura: dado um registro do report.json, devolve {label, y} ou null se o
 // rotulo nao e confiavel. Testavel sem filesystem.
 function labelEntry(entry) {
@@ -44,6 +60,16 @@ function labelEntry(entry) {
   }
   if (a.meanLum < DARK_MEANLUM && a.darkFrac > DARK_DARKFRAC) {
     return { label: "dark", y: Y_DARK.slice() };
+  }
+  // Hibrido de APARENCIA: screenshot na zona cinza, mas o CONTEUDO (features
+  // por elemento) diz a verdade — o hero colorido/midias arrastam o meanLum,
+  // o elemento nao mente (v4.3.1).
+  const f = entry.features;
+  if (f[F_FRAC_LIGHT] >= HYBRID_LIGHT_FRACLIGHT && f[F_TEXT_LUM] <= HYBRID_LIGHT_TEXTLUM) {
+    return { label: "light", y: Y_LIGHT.slice() }; // conteudo claro: inverte
+  }
+  if (f[F_FRAC_DARK] >= HYBRID_DARK_FRACDARK && f[F_TEXT_LUM] >= HYBRID_DARK_TEXTLUM) {
+    return { label: "dark", y: Y_DARK.slice() }; // conteudo escuro: nao mexe
   }
   return null; // hibrido/ambiguo: de fora
 }
