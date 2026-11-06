@@ -16,6 +16,9 @@
   aside h2 { color: #a5adc0; font-size: 14px; margin: 0 0 8px; }
   aside ul { list-style: none; padding: 0; margin: 0; }
   aside li { padding: 6px 10px; color: #a5adc0; }
+  /* hover claro tipico de tema claro: antes da guarda de interacao (v4.2)
+     esta regra aplicava sobre o fundo remapeado e o texto claro sumia */
+  aside li:hover { background: #e1e4e9; color: #2f3441; }
   aside li.active { background: #2f3644; color: #d8dee6; }
   aside li .count { color: #a5adc0; font-size: 12px; float: right; }
   section { flex: 1; background: #ffffff; color: #2f3441; display: flex; flex-direction: column; }
@@ -37,7 +40,7 @@
       <li>Canal de novidades</li>
       <li>Equipe</li>
       <li>Suporte</li>
-      <li>Vendas <span class="count">5</span></li>
+      <li class="probe">Vendas <span class="count">5</span></li>
       <li>Dev</li>
       <li>Infra</li>
       <li>Parceiros</li>
