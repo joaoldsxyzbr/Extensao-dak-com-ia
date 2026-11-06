@@ -190,7 +190,13 @@ async function main() {
   await beforeCtx.close();
   await afterCtx.close();
   if (globalThis.__closeServer) globalThis.__closeServer();
-  process.exit(failures > 0 ? 1 : 0);
+  // Fixtures: gate duro (regressao visual). Sites reais: coleta best-effort —
+  // internet e flutuante (DNS, geo-block, bot-wall); erros de site NAO podem
+  // pintar o CI de vermelho, os dados validos entram no report do mesmo jeito.
+  if (failures > 0 && !useFixtures) {
+    console.log(`aviso: ${failures} site(s) com erro na coleta (best-effort, dataset mantido)`);
+  }
+  process.exit(useFixtures && failures > 0 ? 1 : 0);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
