@@ -2,6 +2,29 @@
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
 
+## [4.3.1] — rotulador desambigua híbridos pelo conteúdo
+
+### Alterado
+- `tools/load-real-data.js`: páginas na zona cinza da **aparência** (hero
+  colorido, muitas mídias — o meanLum do screenshot mente) agora são
+  rotuladas pelo **conteúdo** medido por elemento: elementos claros + texto
+  escuro → inverter (casos reais: threads, vimeo, booking, americanas,
+  gov.br, w3schools, zoom, nature, python.org); elementos escuros + texto
+  claro → não mexer (steam, shopify, roblox, chess.com). Ainda ambíguo →
+  descartado, como antes — a regra continua conservadora.
+- Dataset real no treino: 91 → **104 páginas** (93 claras, 11 escuras);
+  `weights-page.js` retreinado (52.750 bytes). Ganho medido no dataset:
+  chess.com 0,50 (na fronteira) → **0,14** sem mexer; híbridos claros
+  decidem inverter com p ≥ 0,99.
+- Suite: **74 testes** (+3 do rotulador de híbridos).
+
+### Adicionado
+- CI: `crawl-real` agora roda em **2 fatias paralelas** (60 sites cada) +
+  job que mescla, commita o dataset e publica o artefato. Cada fatia fica
+  em ~20 min, longe do shutdown externo de ~40 min que matou duas coletas
+  seguidas (exit 143, com o commit do dataset pulado). Fatia que falha não
+  derruba a coleta: o job de registro mescla o que houver (best effort).
+
 ## [4.3.0] — retreino com dataset real: a IA aprende com a web de verdade
 
 ### Alterado
