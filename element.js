@@ -21,7 +21,8 @@
   const GUARD_ATTR = "darl-guard"; // elemento ja coberto pela guarda de interacao
   const MAX_ELEMENTS = 30000; // acima disso: fallback para modo filtro (v4.3.2: a visao de conversa do Rocket.Chat passa de 8000 e ficava meio remapeada - o pior estado possivel)
   const BATCH = 120;
-  const RESCAN_MS = 1500;
+  const FLUSH_MS = 400; // intervalo minimo entre flushes de regras (v4.3.3: cada flush no <style> custa um recalculo de estilo da pagina inteira - em SPAs gigantes nao pode ser a cada lote)
+  const GUARD_RECHECK_MS = 1500; // recheck da guarda de interacao por elemento (v4.3.3: mousemove nao pode custar getComputedStyle a cada evento)
 
   // Tipos que nunca precisam de regra de cor.
   const SKIP_TAGS = new Set([
@@ -198,13 +199,14 @@
 
   let active = false;
   let styleEl = null;
-  let styleText = "";
-  let flushedLen = 0; // quanto do styleText ja esta no DOM (flush incremental)
+  let ruleBuffer = []; // regras prontas esperando o proximo flush (v4.3.3)
+  let lastFlushAt = 0;
+  let guardChecked = null; // WeakMap el -> ts do ultimo check da guarda (v4.3.3)
   let markId = 0;
   let guardId = 0;
   let guardListeners = null;
   let observer = null;
-  let rescanTimer = null;
+  let scanScheduled = false;
   let scanning = false;
   let queue = [];
   let firstChunkDone = false;
@@ -216,23 +218,30 @@
     styleEl = document.createElement("style");
     styleEl.id = STYLE_ID;
     document.documentElement.appendChild(styleEl);
-    styleText = `
+    styleEl.textContent = `
 html { background-color: #17181d !important; color-scheme: dark !important; }
 /* icones/logos escuros: a rede de imagens os marca e aqui eles viram claros */
 img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; }
 @media print { [${MARK_ATTR}], [${GUARD_ATTR}] { background-color: revert !important; color: revert !important; border-color: revert !important; } html { background-color: revert !important; } }`;
-    styleEl.textContent = styleText;
-    flushedLen = styleText.length;
+    ruleBuffer = [];
+    lastFlushAt = 0;
     return styleEl;
   }
 
-  // Flush incremental (v4.3.2): paginas gigantes geram dezenas de milhares de
-  // regras; reescrever o <style> inteiro a cada lote seria quadratico. So o
-  // delta novo entra no DOM.
-  function flushStyle() {
-    if (!styleEl || styleText.length <= flushedLen) return;
-    styleEl.appendChild(document.createTextNode(styleText.slice(flushedLen)));
-    flushedLen = styleText.length;
+  // Flush incremental (v4.3.2): so o delta de regras entra no DOM - nunca o
+  // <style> inteiro. Throttle (v4.3.3): em paginas gigantes cada flush custa
+  // um recalculo de estilo completo; as regras de um lote acumulam no buffer
+  // e entram juntas no proximo intervalo. force=true furia o intervalo
+  // (primeiro lote, fim da varredura, guarda de interacao).
+  function flushStyle(force) {
+    if (!styleEl || !ruleBuffer.length) return;
+    if (!force) {
+      const now = Date.now();
+      if (now - lastFlushAt < FLUSH_MS) return;
+    }
+    styleEl.appendChild(document.createTextNode("\n" + ruleBuffer.join("\n")));
+    ruleBuffer = [];
+    lastFlushAt = Date.now();
   }
 
   // ------------------------------------------------------------ varredura
@@ -316,15 +325,14 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
   }
 
   function scanBatch() {
-    if (!active || !queue.length) { scanning = false; return; }
+    if (!active || !queue.length) { scanning = false; scanScheduled = false; return; }
     const t0 = Date.now();
     let rules = [];
     while (queue.length && Date.now() - t0 < 24) {
       const el = queue.shift();
       if (!el.isConnected) continue;
       if (el.hasAttribute(MARK_ATTR)) continue;
-      if (SKIP_TAGS.has(el.tagName)) continue;
-      if (el.id === STYLE_ID || el.id === "darl-dark-style" || el.id === "darl-flash-cover" || el.id === "darl-svg-host") continue;
+      if (!isQueueableNode(el)) continue;
       try {
         const rule = elementRule(el, ++markId, CANVAS_L);
         if (rule) rules.push(rule);
@@ -335,11 +343,12 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
       if (markId > MAX_ELEMENTS) break;
     }
     if (rules.length) {
-      styleText += "\n" + rules.join("\n");
-      flushStyle();
+      ruleBuffer.push(...rules);
+      flushStyle(false); // throttled: acumula ate o proximo intervalo
     }
     if (!firstChunkDone) {
       firstChunkDone = true;
+      flushStyle(true); // o reveal acontece agora: as regras do 1o lote precisam estar no DOM
       if (typeof onFirstChunk === "function") { try { onFirstChunk(); } catch { /* reveal e best-effort */ } }
     }
     if (queue.length && markId <= MAX_ELEMENTS) {
@@ -348,6 +357,8 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
       else setTimeout(step, 16);
     } else {
       scanning = false;
+      scanScheduled = false;
+      flushStyle(true); // varredura acabou: entrega o que sobrou no buffer
       if (markId > MAX_ELEMENTS && typeof onFallback === "function") {
         const cb = onFallback; onFallback = null;
         try { cb(); } catch { /* fallback e best-effort */ }
@@ -355,24 +366,59 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     }
   }
 
-  function startScan() {
-    if (scanning) return;
+  // Pura: pode entrar na fila da varredura? (nó de elemento, sem tags
+  // inuteis, sem os estilos da propria extensao) - testavel sem DOM.
+  function isQueueableNode(node) {
+    if (!node || node.nodeType !== 1) return false;
+    if (SKIP_TAGS.has(node.tagName)) return false;
+    return node.id !== STYLE_ID && node.id !== "darl-dark-style" &&
+      node.id !== "darl-flash-cover" && node.id !== "darl-svg-host";
+  }
+
+  // Agenda um scan se nenhum estiver rodando (a cadeia de lotes em idle
+  // drena a fila sozinha quando ja esta ativa).
+  function scheduleScan() {
+    if (!active || scanning || scanScheduled) return;
     scanning = true;
+    scanScheduled = true;
+    const step = () => scanBatch();
+    if (global.requestIdleCallback) requestIdleCallback(step, { timeout: 400 });
+    else setTimeout(step, 16);
+  }
+
+  // Varredura inicial: pagina inteira uma vez so (a partir dai o observer
+  // alimenta a fila so com o que nasceu novo - v4.3.3).
+  function startScan() {
     const root = [];
     if (document.documentElement) root.push(document.documentElement);
     if (document.body) root.push(document.body);
     if (document.body) root.push(...document.body.querySelectorAll("*"));
-    queue = root.filter((el) => !el.hasAttribute(MARK_ATTR));
-    scanBatch();
+    queue = queue.concat(root.filter((el) => !el.hasAttribute(MARK_ATTR)));
+    scheduleScan();
   }
 
-  function scheduleRescan() {
-    if (!active || rescanTimer !== null) return;
-    rescanTimer = setTimeout(() => {
-      rescanTimer = null;
-      if (!active) return;
-      startScan(); // incremental: so processa elementos sem marca
-    }, RESCAN_MS);
+  // Fila guiada por mutacoes (v4.3.3): o SPA insere subarvores inteiras de
+  // uma vez (React) - andar os descendentes aqui e O(novos), em vez de
+  // reconsultar a pagina TODA a cada 1.5s (o Rocket.Chat muta sem parar e
+  // a reconsulta cheia de 20 mil nos era o principal gargalo de CPU).
+  function queueMutations(muts) {
+    let fresh = false;
+    for (const m of muts) {
+      const added = m.addedNodes;
+      if (!added || !added.length) continue;
+      for (let i = 0; i < added.length; i++) {
+        const n = added[i];
+        if (!isQueueableNode(n)) continue;
+        queue.push(n);
+        fresh = true;
+        if (n.querySelectorAll) {
+          for (const c of n.querySelectorAll("*")) {
+            if (isQueueableNode(c)) queue.push(c);
+          }
+        }
+      }
+    }
+    if (fresh) scheduleScan();
   }
 
   // --------------------------------------------------- guarda de interacao
@@ -409,6 +455,13 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     if (!el || el.nodeType !== 1) return;
     if (SKIP_TAGS.has(el.tagName) || el.id === STYLE_ID || el.id === "darl-dark-style" || el.id === "darl-flash-cover" || el.id === "darl-svg-host") return;
     if (el.hasAttribute(GUARD_ATTR)) return; // ja coberto
+    // Throttle por elemento (v4.3.3): mousemove dispara dezenas de eventos
+    // por segundo no mesmo elemento; getComputedStyle nele e nos
+    // pseudo-elementos nao pode rodar em cada evento.
+    if (guardChecked) {
+      const lastAt = guardChecked.get(el);
+      if (lastAt !== undefined && Date.now() - lastAt < GUARD_RECHECK_MS) return;
+    }
     let decls = [], before = [], after = [];
     let keepBg = false;
     try {
@@ -427,6 +480,7 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     } catch {
       return; // estilo imparsavel: nao congela nada
     }
+    if (guardChecked) guardChecked.set(el, Date.now()); // contou pro throttle
     if (!decls.length && !before.length && !after.length) return;
     const id = String(++guardId);
     try { el.setAttribute(GUARD_ATTR, id); } catch { return; }
@@ -435,8 +489,8 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     if (decls.length) text += `\n${base} { ${decls.join("; ")}; }`;
     if (before.length) text += `\n${base}::before { ${before.join("; ")}; }`;
     if (after.length) text += `\n${base}::after { ${after.join("; ")}; }`;
-    styleText += text;
-    flushStyle();
+    ruleBuffer.push(text.replace(/^\n/, ""));
+    flushStyle(true); // hover precisa de efeito imediato: fura o throttle
   }
 
   // mouseover/focusin delegados: cobre o alvo e os ancestrais proximos
@@ -455,16 +509,13 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     if (typeof document === "undefined" || !document.documentElement) return false;
     active = true;
     firstChunkDone = false;
+    if (typeof WeakMap === "function") guardChecked = new WeakMap();
     onFirstChunk = (hooks && hooks.onApplied) || null;
     onFallback = (hooks && hooks.onFallback) || null;
     ensureStyle();
     startScan();
     if (typeof MutationObserver === "function") {
-      observer = new MutationObserver((muts) => {
-        for (const m of muts) {
-          if (m.addedNodes && m.addedNodes.length) { scheduleRescan(); return; }
-        }
-      });
+      observer = new MutationObserver(queueMutations);
       observer.observe(document.documentElement, { childList: true, subtree: true });
     }
     // guarda de interacao: hover/foco em tempo real (capture para nao
@@ -483,14 +534,14 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
       for (const [ev, fn] of guardListeners) document.removeEventListener(ev, fn, { capture: true });
       guardListeners = null;
     }
-    if (rescanTimer !== null) { clearTimeout(rescanTimer); rescanTimer = null; }
     queue = [];
     scanning = false;
+    scanScheduled = false;
+    ruleBuffer = [];
+    lastFlushAt = 0;
     onFirstChunk = null;
     onFallback = null;
     if (styleEl) { styleEl.remove(); styleEl = null; }
-    styleText = "";
-    flushedLen = 0;
     markId = 0;
     guardId = 0;
     try {
@@ -507,7 +558,8 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     mapBackground, mapText, mapNeutral, remapGradient, remapShadow,
     rgbToHsl, lum255: (r, g, b) => lum255(r, g, b), guardDecls,
     parseColorList, isAccentColor, isAccentSize, saturation255,
-    ACCENT_SAT, ACCENT_MAX_PX,
+    isQueueableNode,
+    ACCENT_SAT, ACCENT_MAX_PX, FLUSH_MS, GUARD_RECHECK_MS,
     STYLE_ID, MARK_ATTR, GUARD_ATTR, MAX_ELEMENTS,
     _internals: { BG_LIGHT, TEXT_DARK, CANVAS_L, contrastRatio, elementRule, guardInteraction },
   };
