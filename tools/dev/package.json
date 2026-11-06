@@ -1,0 +1,12 @@
+{
+  "name": "darl-dev-tools",
+  "private": true,
+  "description": "Ferramentas de desenvolvimento da Extensão Dark com IA: crawler de regressão visual (Playwright) e métricas perceptuais. Nada daqui vai para o runtime da extensão.",
+  "scripts": {
+    "crawl:fixtures": "node crawl.js --fixtures",
+    "crawl:sites": "node crawl.js --sites sites.txt"
+  },
+  "dependencies": {
+    "playwright": "^1.49.0"
+  }
+}
