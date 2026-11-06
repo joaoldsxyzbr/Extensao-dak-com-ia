@@ -1,8 +1,8 @@
 "use strict";
 
 // Extensão Dark com IA - content script.
-// Extrai features da pagina, roda a mini rede neural (nn.js) e aplica o tema.
-// Nao existe ajuste manual: a rede decide tudo (e aprende com o feedback do popup).
+// Extrai features da pagina (darl-features.js), roda a mini rede neural
+// (nn.js) e aplica o tema - por elemento (element.js) ou por filtro global.
 
 const STYLE_ID = "darl-dark-style";
 const HOST = location.hostname;
@@ -14,6 +14,7 @@ const DEFAULT_SETTINGS = {
   smartImages: true, // a rede de imagens decide caso a caso (icones escuros ficam claros)
   forceTheme: true, // por padrao: ignora o tema escuro do site e aplica retoque proprio
   svgFilter: false, // modo Filter+ (matriz SVG): cores mais fieis, experimental
+  elementMode: true, // v4: analise por elemento em vez de filtro de inversao global
 };
 
 let settings = null;
@@ -28,183 +29,20 @@ let pipelineReady = false;
 
 const clamp01 = (v) => Math.min(1, Math.max(0, v));
 
-function lum(r, g, b) {
-  return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
-}
-
-function parseRGB(color) {
-  // "rgb(a, b, c)" ou "rgba(a, b, c, alpha)"
-  const m = color && color.match(/rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?\s*\)/);
-  if (!m) return null;
-  return {
-    r: parseFloat(m[1]),
-    g: parseFloat(m[2]),
-    b: parseFloat(m[3]),
-    a: m[4] === undefined ? 1 : parseFloat(m[4]),
-  };
-}
-
-function contrastRatio(l1, l2) {
-  const hi = Math.max(l1, l2) + 0.05;
-  const lo = Math.min(l1, l2) + 0.05;
-  return hi / lo;
-}
-
 // ---------------------------------------------------------------- features (32)
-// Ordem canonica (deve ser identica a tools/train-page-model.js):
-// 0 htmlBg, 1 meanBg | 2-9 histograma de luminancia efetiva (8 faixas)
-// 10 fracWithBg, 11 fracDark, 12 fracLight | 13 textLum, 14 lowContrast, 15 contrast
-// 16 satMean, 17 satHigh, 18 colorful | 19 imgFrac, 20 bgImgFrac, 21 mono
-// 22 fontMean, 23 titleFrac, 24 smallUi, 25 fixedFrac
-// 26 articleN, 27 navN, 28 tableN, 29 formN, 30 mediaN, 31 metaDark
+// A extracao mora em darl-features.js (modulo compartilhado com o crawler
+// de dados reais). A ordem das 32 features e canonica em tres lugares:
+// darl-features.js, tools/train-page-model.js e tools/test-nn.js.
 
-const FEATURE_COUNT = 32;
-
-function inferHtmlBgLum() {
-  // Fundo efetivo: o primeiro body/html com cor opaca; canvas branco como padrao.
-  for (const el of [document.body, document.documentElement]) {
-    if (!el) continue;
-    const c = parseRGB(getComputedStyle(el).backgroundColor);
-    if (c && c.a > 0.5) return lum(c.r, c.g, c.b);
-  }
-  return 1;
-}
-
-function metaDarkScheme() {
-  for (const meta of document.querySelectorAll("meta[name='color-scheme'], meta[name='supported-color-schemes']")) {
-    if ((meta.content || "").toLowerCase().includes("dark")) return 1;
-  }
-  return 0;
-}
-
-function countNorm(n) {
-  return clamp01(Math.log(1 + Math.max(0, n)) / Math.log(61));
-}
+const FEATURE_COUNT = DarlFeatures.FEATURE_COUNT;
+const { parseRGB, lum, contrastRatio, hasText } = DarlFeatures;
 
 function extractFeatures() {
-  // Fallback conservador: assume pagina clara enquanto nao ha DOM suficiente.
-  const fallback = new Array(FEATURE_COUNT).fill(0);
-  fallback[0] = 1;
-  fallback[2 + 7] = 0.8; // h7
-  fallback[12] = 0.8; // fracLight
-  fallback[15] = 0.85; // contrast
-  fallback[22] = 0.5; // fontMean
-  // A extração precisa ler a página ORIGINAL: os estilos da própria extensão
-  // (tampa anti-flash escura no boot, fundo branco do modo inversão) não podem
-  // poluir as features na reanálise — eram a causa de decisoes diferentes entre
-  // primeira analise e Reanalisar. Desliga-os so durante a leitura e religa em
-  // seguida, no mesmo tick de execucao (nada e pintado no intervalo).
-  const extStyles = [];
-  try {
-    for (const s of document.querySelectorAll("style")) {
-      if ((s.id === STYLE_ID || s.id === COVER_ID) && !s.disabled) {
-        s.disabled = true;
-        extStyles.push(s);
-      }
-    }
-  } catch {
-    /* DOM imparsavel: extrai como estiver */
-  }
-  try {
-    const htmlLum = inferHtmlBgLum();
-    const all = document.body ? document.body.querySelectorAll("*") : [];
-    const total = all.length;
-    if (total < 3) return null; // pagina ainda vazia demais
-    const step = Math.max(1, Math.floor(total / 400));
-
-    const hist = new Array(8).fill(0);
-    let effLumSum = 0;
-    let bgCount = 0, darkCount = 0, lightCount = 0;
-    let satSum = 0, satHighCount = 0, colorfulCount = 0;
-    let textLumSum = 0, textCount = 0, lowContrastCount = 0, contrastSum = 0;
-    let fontSum = 0, fontCount = 0, monoCount = 0, titleCount = 0, smallCount = 0;
-    let inlineBgCount = 0, fixedCount = 0, sampled = 0;
-
-    for (let i = 0; i < total; i += step) {
-      const el = all[i];
-      sampled++;
-      const cs = getComputedStyle(el);
-
-      // luminancia efetiva: cor de fundo explicita ou fundo do documento
-      const bg = parseRGB(cs.backgroundColor);
-      let effLum = htmlLum;
-      if (bg && bg.a > 0.4) {
-        effLum = lum(bg.r, bg.g, bg.b);
-        bgCount++;
-        const mx = Math.max(bg.r, bg.g, bg.b);
-        const mn = Math.min(bg.r, bg.g, bg.b);
-        const sat = mx === 0 ? 0 : (mx - mn) / mx;
-        satSum += sat;
-        if (sat > 0.5) satHighCount++;
-        if (sat > 0.4 && effLum > 0.2 && effLum < 0.9) colorfulCount++;
-      }
-      hist[Math.min(7, Math.floor(effLum * 8))]++;
-      effLumSum += effLum;
-      if (effLum < 0.25) darkCount++;
-      else if (effLum > 0.75) lightCount++;
-
-      if (cs.backgroundImage && cs.backgroundImage !== "none") inlineBgCount++;
-
-      const fontSize = parseFloat(cs.fontSize);
-      if (!Number.isNaN(fontSize)) {
-        fontSum += fontSize;
-        fontCount++;
-        if (fontSize >= 24) titleCount++;
-        else if (fontSize <= 12) smallCount++;
-      }
-      if ((cs.fontFamily || "").includes("mono")) monoCount++;
-      if (cs.position === "fixed" || cs.position === "sticky") fixedCount++;
-
-      const fg = parseRGB(cs.color);
-      if (fg && el.childNodes.length && hasText(el)) {
-        const tl = lum(fg.r, fg.g, fg.b);
-        textLumSum += tl;
-        const ratio = contrastRatio(tl, effLum);
-        contrastSum += Math.log(1 + ratio) / Math.log(22);
-        if (ratio < 3) lowContrastCount++;
-        textCount++;
-      }
-    }
-
-    const f = new Array(FEATURE_COUNT).fill(0);
-    f[0] = clamp01(htmlLum);
-    f[1] = clamp01(effLumSum / sampled);
-    for (let b = 0; b < 8; b++) f[2 + b] = clamp01(hist[b] / sampled);
-    f[10] = clamp01(bgCount / sampled);
-    f[11] = clamp01(darkCount / sampled);
-    f[12] = clamp01(lightCount / sampled);
-    f[13] = textCount ? clamp01(textLumSum / textCount) : 0.15;
-    f[14] = textCount ? clamp01(lowContrastCount / textCount) : 0.05;
-    f[15] = textCount ? clamp01(contrastSum / textCount) : 0.8;
-    f[16] = bgCount ? clamp01(satSum / bgCount) : 0.1;
-    f[17] = bgCount ? clamp01(satHighCount / bgCount) : 0.08;
-    f[18] = bgCount ? clamp01(colorfulCount / bgCount) : 0.12;
-    f[19] = clamp01((document.images ? document.images.length : 0) / sampled * 0.5);
-    f[20] = clamp01(inlineBgCount / sampled * 0.5);
-    f[21] = clamp01(monoCount / sampled);
-    f[22] = fontCount ? clamp01((fontSum / fontCount) / 28) : 0.5;
-    f[23] = clamp01(titleCount / sampled);
-    f[24] = clamp01(smallCount / sampled);
-    f[25] = clamp01(fixedCount / sampled);
-    f[26] = countNorm(document.querySelectorAll("article").length);
-    f[27] = countNorm(document.querySelectorAll("nav").length);
-    f[28] = countNorm(document.querySelectorAll("table").length);
-    f[29] = countNorm(document.querySelectorAll("input, textarea, select, form").length);
-    f[30] = countNorm(document.querySelectorAll("video, canvas, iframe").length);
-    f[31] = metaDarkScheme();
-    return f;
-  } catch {
-    return fallback;
-  } finally {
-    for (const s of extStyles) s.disabled = false;
-  }
-}
-
-function hasText(el) {
-  for (const node of el.childNodes) {
-    if (node.nodeType === Node.TEXT_NODE && node.textContent.trim().length > 0) return true;
-  }
-  return false;
+  // Os estilos da propria extensao nao podem poluir as features na reanálise:
+  // sao desligados durante a leitura e religados no mesmo tick (darl-features).
+  return DarlFeatures.extract({
+    skipStyleIds: [STYLE_ID, COVER_ID, DarlElement.STYLE_ID],
+  });
 }
 
 // ------------------------------------------------------------ imagens (rede 2)
@@ -343,10 +181,10 @@ function computeDecision() {
   // O site pediu exclusao: a IA respeita.
   if (hasLockMeta()) return { mode: "auto", off: true, invertProb: 0, skip: true, lock: true };
 
-  const { p } = DarlNN.forward(weightsModel, features);
+  const { p } = DarlModel.forward(weightsModel, features);
   const invert = p[0] > 0.5;
   // Confianca calibrada por temperatura: a porcentagem do popup e honesta.
-  const invertProb = Math.round(DarlNN.calibrate(p[0], PAGE_TEMP) * 100) / 100;
+  const invertProb = Math.round(DarlNN.calibrate(p[0], weightsModel.temp) * 100) / 100;
   const sepia = 0.5 * p[3];
   // Piso leve de dessaturacao: reduz halation (branco puro cansa em fundo escuro).
   const tint = Math.max(0.03, 0.25 * p[5]);
@@ -357,10 +195,14 @@ function computeDecision() {
   }
 
   if (invert) {
+    // Site claro: decide como inverter. O motor por elemento (v4) remapeia
+    // cor por cor em vez de filtrar a pagina inteira; o modo filtro classico
+    // (ou a matriz SVG) continua disponivel nas opcoes.
+    const engine = (settings.elementMode !== false && !settings.svgFilter) ? "elements" : "filter";
     // Site claro: inverte com knobs do modelo e limites WCAG:
     // contraste no maximo 0.95 (preto invertido nao vira #000 puro) e piso de brilho.
     return {
-      mode: "auto", invert: true, invertProb,
+      mode: "auto", invert: true, invertProb, engine,
       brightness: Math.max(0.75, 0.6 + 0.8 * p[1]),
       contrast: Math.min(0.9, Math.max(0.8, 0.6 + 0.8 * p[2])),
       sepia, tint,
@@ -369,7 +211,7 @@ function computeDecision() {
 
   // Site ja escuro com forceTheme (padrao): retoque escuro da IA.
   return {
-    mode: "auto", invert: false, invertProb,
+    mode: "auto", invert: false, invertProb, engine: "retoque",
     brightness: 0.7 + 0.3 * p[4],
     contrast: 0.9 + 0.25 * p[2],
     sepia, tint,
@@ -508,12 +350,32 @@ function apply(decision) {
   if (!decision || decision.off) {
     if (style) style.remove();
     applied = decision ? { ...decision, css: false } : { off: true };
+    if (typeof DarlElement !== "undefined") DarlElement.stop();
     clearRegions();
     removeSvgFilters();
     reveal();
     return;
   }
 
+  // Motor por elemento (v4): remapeia cor por cor; a tampa anti-flash so
+  // levanta quando o primeiro lote de regras foi aplicado (hooks.onApplied).
+  // Pagina grande demais ou erro na varredura -> fallback para o filtro.
+  if (decision.engine === "elements") {
+    if (style) style.remove();
+    removeSvgFilters();
+    if (!DarlElement.isActive()) {
+      DarlElement.start(decision, {
+        onApplied: reveal,
+        onFallback: () => apply({ ...decision, engine: "filter" }),
+      });
+    }
+    applied = { ...decision, css: true };
+    clearRegions(); // sem filtro global, nao ha regioes para neutralizar
+    queueImages();
+    return;
+  }
+
+  if (DarlElement.isActive()) DarlElement.stop();
   let el = style;
   if (!el) {
     el = document.createElement("style");
@@ -537,10 +399,45 @@ function refresh() {
     if (decision === null) return; // IA ainda nao pronta: nao mexe no estado atual
     apply(decision);
     cacheDecision(decision);
+    logDecision(decision);
     queueImages();
   } catch (err) {
     // Nunca deixar a analise quebrar a pagina de hospedagem.
     console.warn("Extensão Dark com IA: falha ao aplicar tema", err);
+  }
+}
+
+// ------------------------------------------------------- dados de navegacao
+// Registro local e anonimo (so o host, sem querystring) das decisoes reais
+// da IA com as features vistas - a materia-prima do retreino com dados
+// reais. Exportavel pelo popup ("Exportar dados"); nada sai do navegador
+// a nao ser quando o usuario baixa o arquivo.
+
+let lastLogJson = "";
+function logDecision(decision) {
+  if (!IS_TOP || !decision || decision.off || !features) return;
+  try {
+    const rec = {
+      t: Date.now(),
+      host: HOST,
+      path: location.pathname.slice(0, 120),
+      engine: decision.engine || (decision.invert ? "filter" : "retoque"),
+      invert: !!decision.invert,
+      invertProb: typeof decision.invertProb === "number" ? decision.invertProb : null,
+      features: features.map((v) => Math.round(v * 1000) / 1000),
+    };
+    const json = JSON.stringify(rec);
+    if (json === lastLogJson) return; // mesma decisao: nao repete registro
+    lastLogJson = json;
+    chrome.storage.local.get({ dataLog: [] }, (res) => {
+      if (chrome.runtime.lastError) return;
+      const log = Array.isArray(res.dataLog) ? res.dataLog : [];
+      log.push(rec);
+      while (log.length > 500) log.shift(); // teto: 500 paginas
+      chrome.storage.local.set({ dataLog: log }, () => void chrome.runtime.lastError);
+    });
+  } catch {
+    /* log e best-effort: nunca atrapalha a navegacao */
   }
 }
 
@@ -711,6 +608,7 @@ function cacheDecision(decision) {
   const slim = {
     mode: "auto",
     invert: decision.invert,
+    engine: decision.engine,
     brightness: decision.brightness,
     contrast: decision.contrast,
     sepia: decision.sepia,
@@ -731,8 +629,8 @@ function cacheDecision(decision) {
 }
 
 // Modelos estaticos embutidos: a extensao e inference-only. Treino acontece
-// offline, pelos treinadores em tools/ (pipeline nnlab), e chega aqui embutido.
-const PAGE_TEMP = globalThis.DARL_PAGE_WEIGHTS && globalThis.DARL_PAGE_WEIGHTS.temp ? globalThis.DARL_PAGE_WEIGHTS.temp : 1;
+// offline, pelos treinadores em tools/ (pipeline nnlab ou GBDT), e chega aqui embutido.
+// A temperatura de calibracao vem junto com os pesos (weightsModel.temp).
 
 function loadState() {
   chrome.storage.sync.get(DEFAULT_SETTINGS, (sync) => {
@@ -740,7 +638,7 @@ function loadState() {
     settings = { ...DEFAULT_SETTINGS, ...sync };
     chrome.storage.local.get("hostCache", (local) => {
       if (chrome.runtime.lastError) return;
-      weightsModel = DarlNN.makeNet(globalThis.DARL_PAGE_WEIGHTS.dims, globalThis.DARL_PAGE_WEIGHTS);
+      weightsModel = DarlModel.makeModel(globalThis.DARL_PAGE_WEIGHTS);
       if (!imageNet && globalThis.DARL_IMAGE_WEIGHTS) {
         imageNet = DarlNN.makeNet(globalThis.DARL_IMAGE_WEIGHTS.dims, globalThis.DARL_IMAGE_WEIGHTS);
       }
