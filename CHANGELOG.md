@@ -1,6 +1,12 @@
-# Histórico de versões — Darl Dark
+# Histórico de versões — Extensão Dark com IA
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
+
+## [Não lançado]
+
+### Alterado
+- Nome do projeto corrigido de "Darl Dark" para "Extensão Dark com IA"
+  (manifest, popup e documentação; sem mudança de comportamento).
 
 ## [2.0.0] — extensão inference-only + pipeline de treino moderno
 
