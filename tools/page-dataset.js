@@ -1,5 +1,5 @@
 // Dataset de treino do modelo de paginas (compartilhado).
-// Fonte unica dos 14 arquetipos + geracao de amostras (treino/holdout) para
+// Fonte unica dos 15 arquetipos + geracao de amostras (treino/holdout) para
 // TODOS os treinadores da rede de paginas: MLP (train-page-model.js) e
 // GBDT (train-page-gbdt.js). A ordem das features e canonica aqui, em
 // darl-features.js e em tools/test-nn.js.
@@ -64,6 +64,26 @@ const ARCHETYPES = [
       articleN:0.05, navN:0.5, tableN:0.02, formN:0.35, mediaN:0.25, metaDark:0.05 },
     vary: { htmlBg:0.04, h0:0.08, h7:0.1, fracDark:0.08, fracLight:0.08, textLum:0.08,
       satMean:0.06, colorful:0.06, smallUi:0.08, fixedFrac:0.06, navN:0.15, formN:0.1 },
+    y: [1, 0.42, 0.30, 0.05, 0.5, 0.08] },
+  { name: "CHAT_HYBRID", w: 0.06, family: "LIGHT", // chat real (Rocket.Chat): casca escura + painel branco sobreposto
+    // Centro calibrado no vetor REAL exportado de chat.pradoapp.com (dataLog,
+    // 06/11/2026): html bg escuro, quase todos os elementos transparentes
+    // (fracWithBg ~0.06) e o painel branco do conteudo e uma minoria do DOM.
+    // A pagina parece "escura" para features por elemento, mas visualmente e
+    // hibrido com centro claro; texto medio claro da sidebar acha contraste
+    // baixo contra o fundo herdado. Assinatura: fracDark ~0.97 + lowContrast
+    // ~0.96 + textLum ~0.6 (num site escuro de verdade o texto e claro e o
+    // contraste medido e bom).
+    f: { htmlBg:0.2, meanBg:0.21, h1:0.97, fracWithBg:0.06, fracDark:0.97, fracLight:0.01,
+      textLum:0.6, lowContrast:0.96, contrast:0.4,
+      satMean:0.34, satHigh:0.26, colorful:0.26,
+      imgFrac:0.01, bgImgFrac:0.005, mono:0,
+      fontMean:0.5, titleFrac:0, smallUi:0.07, fixedFrac:0.002,
+      articleN:0, navN:0, tableN:0, formN:0, mediaN:0, metaDark:0 },
+    vary: { htmlBg:0.06, h1:0.06, fracWithBg:0.04, fracDark:0.04, fracLight:0.02,
+      textLum:0.08, lowContrast:0.06, contrast:0.08,
+      satMean:0.08, satHigh:0.08, colorful:0.08, imgFrac:0.02, smallUi:0.05,
+      fixedFrac:0.03, navN:0.15, formN:0.15, mediaN:0.15 },
     y: [1, 0.42, 0.30, 0.05, 0.5, 0.08] },
   { name: "SHOP", w: 0.06, family: "LIGHT", // e-commerce: fundo branco, cards e botoes saturados
     f: { htmlBg:0.96, meanBg:0.88, h6:0.06, h7:0.68, fracWithBg:0.45, fracDark:0.05, fracLight:0.72,
