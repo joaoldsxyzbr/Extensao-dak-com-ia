@@ -34,6 +34,9 @@ const FIXTURES = path.join(__dirname, "fixtures");
 const FIXTURE_RULES = {
   "light.html": { darkFrac: 0.55, meanLum: 0.45, lumStd: 0.05 },
   "hybrid.html": { darkFrac: 0.55, meanLum: 0.45, lumStd: 0.03, halvesDarkFrac: 0.5 },
+  // casca escura + painel branco sobreposto (Rocket.Chat real): as features
+  // por elemento parecem "site escuro", mas o painel central tem que escurecer
+  "hybrid-chat.html": { darkFrac: 0.55, meanLum: 0.45, lumStd: 0.03, halvesDarkFrac: 0.5 },
   "dark.html": { darkFrac: 0.6, maxDeltaE: 45 }, // ja escuro: retoque quase identidade
 };
 
