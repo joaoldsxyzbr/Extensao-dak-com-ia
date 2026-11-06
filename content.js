@@ -695,7 +695,15 @@ let reAnalyzeTimer = null;
 function scheduleReAnalyze() {
   mutationCount++;
   if (document.hidden || reAnalyzeTimer !== null) return;
-  if (mutationCount < MIN_MUTATIONS) return;
+  // v4.3.3: paginas gigantes mutam o tempo todo (React/chats SPA) e a
+  // reextracao custa caro (400 getComputedStyle + recalculo de estilo ao
+  // desligar/religar os <style> da extensao). O limiar de mutacoes escala
+  // com o tamanho do DOM: em 12 mil nos, so reanalisa depois de ~120
+  // mutacoes, nao a cada 40. A contagem live (HTMLCollection.length) e
+  // barata - sem querySelectorAll.
+  const domCount = document.body ? document.body.getElementsByTagName("*").length : 0;
+  const minMuts = Math.max(MIN_MUTATIONS, Math.floor(domCount / 100));
+  if (mutationCount < minMuts) return;
   const passed = Date.now() - lastExtractAt;
   const wait = passed < RE_ANALYZE_MS ? RE_ANALYZE_MS - passed + 500 : 500;
   reAnalyzeTimer = setTimeout(() => {
