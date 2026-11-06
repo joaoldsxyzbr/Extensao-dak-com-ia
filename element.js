@@ -18,7 +18,7 @@
 (function (global) {
   const STYLE_ID = "darl-element-style";
   const MARK_ATTR = "darl-el";
-  const MAX_ELEMENTS = 4000; // acima disso: fallback para modo filtro
+  const MAX_ELEMENTS = 8000; // acima disso: fallback para modo filtro (v4.1: chats SPAs como Rocket.Chat passam de 4000)
   const BATCH = 120;
   const RESCAN_MS = 1500;
 
