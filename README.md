@@ -78,6 +78,19 @@ Cobre inferência nos três regimes (clara/escura/mista), o ciclo de feedback
 - **Anti-flash**: o `document_start` instala uma tampa escura (`html.darl-boot`) e
   o conteúdo só é revelado com o tema aplicado — com timeout de segurança de 450ms
   e preferência pelo cache do host, então revisitas revelam quase instantaneamente.
+- **Mapeamento WCAG**: o contraste invertido é limitado a 0.90 e há piso leve de
+  dessaturação — o branco vira ~#191919 (não #000) e o texto ~#ddd (não #fff),
+  evitando halation (texto branco puro cansa em fundo escuro). Testado em
+  `tools/test-nn.js`.
+- **Meta-lock**: sites com `<meta name="darkreader-lock">` são respeitados
+  (convenção do ecossistema Dark Reader).
+- **Acessibilidade**: `forced-colors` do sistema desativa a intervenção, e o tema
+  nunca é aplicado na impressão (`@media print`).
+- **Modo SVG (Filter+)**: experimental, opção "Cores mais fiéis" — a cadeia
+  inteira (sepia, grayscale, inversão, brilho, contraste) vira uma única
+  `feColorMatrix` com `invertNHue`, que inverte a luminância **preservando o
+  matiz** (azuis continuam azuis). Mídias e regiões são restauradas pelo reverso
+  exato — a mesma matriz involutiva.
 - Modo filter global: elementos com `position: fixed` ainda podem acompanhar o
   scroll quando a região que os contém é neutralizada (efeito raro).
 - A validação visual em sites reais é manual; o resto é coberto por `tools/test-nn.js`.

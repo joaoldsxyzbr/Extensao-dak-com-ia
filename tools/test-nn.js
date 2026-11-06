@@ -184,5 +184,40 @@ for (let i = 0; i < xs.length; i++) loss1 += DarlNN.train(tiny, xs[i], ys[i], 0.
 expect(loss1 < loss0 * 0.05, "rede generica aprende (makeNet + train)",
   `loss ${(loss0 / xs.length).toFixed(4)} -> ${(loss1 / xs.length).toFixed(4)}`);
 
+// ------------------------------------------------- matrizes SVG (modo Filter+)
+const mx = globalThis.DarlMatrix;
+expect(Boolean(mx), "DarlMatrix disponivel");
+
+// invertNHue e involutiva: aplicada duas vezes = identidade (usa-se como reverso)
+const inv = mx.invertNHue();
+const inv2 = mx.multiplyMatrices(inv, inv);
+const nearEye = inv2.every((row, i) => row.every((v, j) => Math.abs(v - (i === j ? 1 : 0)) < 2e-3));
+expect(nearEye, "invertNHue x invertNHue = identidade (reverso exato)");
+
+// branco puro invertido nao vira #000 puro (anti-halation: cap de contraste 0.90)
+const chain1 = mx.composeDarkMatrix({ sepia: 0, grayscale: 0.03, contrast: 0.9, brightness: 0.95 });
+const dark = mx.applyColorMatrix([255, 255, 255], chain1);
+expect(dark.every((v) => v >= 8 && v <= 40), "WCAG: branco invertido fica cinza-escuro, nao #000",
+  `rgb(${dark.join(",")})`);
+expect(mx.applyColorMatrix([255, 255, 255], chain1).every((v) => v < 50), "branco vira tema escuro");
+
+// texto escuro sobe pra quase-branco levemente cinza (anti-halation no texto)
+const textOut = mx.applyColorMatrix([26, 26, 26], chain1);
+expect(textOut.every((v) => v > 200), "WCAG: texto claro apos inversao fica acima de 200",
+  `rgb(${textOut.join(",")})`);
+
+// reverso da midia restaura a cor original (contraste/brightness pequenos)
+const chain2 = mx.composeDarkMatrix({ sepia: 0, grayscale: 0, contrast: 1, brightness: 1 });
+const orig = [80, 140, 220];
+const inverted = mx.applyColorMatrix(orig, chain2);
+const restored = mx.applyColorMatrix(inverted, inv);
+expect(restored.every((v, i) => Math.abs(v - orig[i]) <= 2), "midia: invert + reverso = original",
+  `rgb(${orig.join(",")}) -> rgb(${restored.join(",")})`);
+
+// fidelidade de matiz: um azul puro permanece azulado apos invertNHue
+const blue = mx.applyColorMatrix([40, 80, 220], inv);
+expect(blue[2] > blue[0] + 30 && blue[2] > blue[1], "matiz preservado: azul continua azul",
+  `rgb(${blue.join(",")})`);
+
 console.log(failures === 0 ? "\ntodos os testes passaram" : `\n${failures} falha(s)`);
 process.exit(failures === 0 ? 0 : 1);

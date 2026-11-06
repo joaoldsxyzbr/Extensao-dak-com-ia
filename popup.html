@@ -49,6 +49,10 @@
         <span>Aplicar meu tema mesmo em sites já escuros</span>
       </label>
       <label class="checkbox-line">
+        <input type="checkbox" id="svg-filter" />
+        <span>Cores mais fiéis (filtro SVG experimental)</span>
+      </label>
+      <label class="checkbox-line">
         <input type="checkbox" id="smart-images" checked />
         <span>IA analisa cada imagem (ícones escuros ficam visíveis)</span>
       </label>
@@ -62,6 +66,11 @@
       <span class="hint">Alt+Shift+D alterna tudo</span>
       <button id="reset" class="ghost">Restaurar padrões</button>
     </footer>
+
+    <div class="hint-box" id="edge-hint" hidden>
+      No Edge, desative o "tema escuro nativo" do navegador (edge://settings/appearance)
+      se as cores parecerem escurecidas em dobro.
+    </div>
   </main>
 
   <script src="weights-page.js"></script>

@@ -98,4 +98,82 @@
   }
 
   globalThis.DarlNN = { makeNet, compatible, forward, train, serialize };
+
+  // ------------------------------------------------- motor de matrizes (modo SVG)
+  // Compoem a cadeia sepia x grayscale x contraste x brilho x invertNHue numa
+  // unica matriz 5x5, no mesmo formato feColorMatrix do Dark Reader Filter+.
+  // invertNHue inverte a luminancia preservando o matiz - cores mais fiéis que
+  // invert(1) hue-rotate(180deg).
+
+  const M = {
+    identity: () => [[1,0,0,0,0],[0,1,0,0,0],[0,0,1,0,0],[0,0,0,1,0],[0,0,0,0,1]],
+    invertNHue: () => [
+      [0.333, -0.667, -0.667, 0, 1],
+      [-0.667, 0.333, -0.667, 0, 1],
+      [-0.667, -0.667, 0.333, 0, 1],
+      [0, 0, 0, 1, 0],
+      [0, 0, 0, 0, 1],
+    ],
+    brightness: (v) => [[v,0,0,0,0],[0,v,0,0,0],[0,0,v,0,0],[0,0,0,1,0],[0,0,0,0,1]],
+    contrast: (v) => {
+      const t = (1 - v) / 2;
+      return [[v,0,0,0,t],[0,v,0,0,t],[0,0,v,0,t],[0,0,0,1,0],[0,0,0,0,1]];
+    },
+    sepia: (v) => [
+      [0.393 + 0.607 * (1 - v), 0.769 - 0.769 * (1 - v), 0.189 - 0.189 * (1 - v), 0, 0],
+      [0.349 - 0.349 * (1 - v), 0.686 + 0.314 * (1 - v), 0.168 - 0.168 * (1 - v), 0, 0],
+      [0.272 - 0.272 * (1 - v), 0.534 - 0.534 * (1 - v), 0.131 + 0.869 * (1 - v), 0, 0],
+      [0, 0, 0, 1, 0],
+      [0, 0, 0, 0, 1],
+    ],
+    grayscale: (v) => [
+      [0.2126 + 0.7874 * (1 - v), 0.7152 - 0.7152 * (1 - v), 0.0722 - 0.0722 * (1 - v), 0, 0],
+      [0.2126 - 0.2126 * (1 - v), 0.7152 + 0.2848 * (1 - v), 0.0722 - 0.0722 * (1 - v), 0, 0],
+      [0.2126 - 0.2126 * (1 - v), 0.7152 - 0.7152 * (1 - v), 0.0722 + 0.9278 * (1 - v), 0, 0],
+      [0, 0, 0, 1, 0],
+      [0, 0, 0, 0, 1],
+    ],
+  };
+
+  function multiplyMatrices(a, b) {
+    const out = [];
+    for (let i = 0; i < a.length; i++) {
+      out.push([]);
+      for (let j = 0; j < b[0].length; j++) {
+        let sum = 0;
+        for (let k = 0; k < a[0].length; k++) sum += a[i][k] * b[k][j];
+        out[i].push(sum);
+      }
+    }
+    return out;
+  }
+
+  // chain: { sepia, grayscale, contrast, brightness } em escala 0..1.
+  // Ordem espelha o modo CSS: sepia/grayscale antes da inversao;
+  // brightness/contrast DEPOIS (o que permite o lift anti-halation no preto).
+  function composeDarkMatrix(chain) {
+    let m = M.identity();
+    if (chain.sepia > 0) m = multiplyMatrices(m, M.sepia(chain.sepia));
+    if (chain.grayscale > 0) m = multiplyMatrices(m, M.grayscale(chain.grayscale));
+    m = multiplyMatrices(m, M.invertNHue());
+    if (chain.brightness !== 1) m = multiplyMatrices(m, M.brightness(chain.brightness));
+    if (chain.contrast !== 1) m = multiplyMatrices(m, M.contrast(chain.contrast));
+    return m;
+  }
+
+  function toSVGMatrixString(matrix) {
+    return matrix.slice(0, 4).map((row) => row.map((v) => v.toFixed(3)).join(" ")).join(" ");
+  }
+
+  function applyColorMatrix(rgb, matrix) {
+    const [r, g, b] = rgb;
+    const v = [r / 255, g / 255, b / 255, 1, 1];
+    return [0, 1, 2].map((i) => {
+      let sum = 0;
+      for (let k = 0; k < 5; k++) sum += matrix[i][k] * v[k];
+      return Math.min(255, Math.max(0, Math.round(sum * 255)));
+    });
+  }
+
+  globalThis.DarlMatrix = { invertNHue: M.invertNHue, composeDarkMatrix, toSVGMatrixString, applyColorMatrix, multiplyMatrices };
 })();

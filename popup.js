@@ -5,6 +5,7 @@ const DEFAULT_SETTINGS = {
   invertMedia: true,
   smartImages: true,
   forceTheme: true,
+  svgFilter: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -47,12 +48,18 @@ function render() {
   $("invert-media").checked = settings.invertMedia;
   $("smart-images").checked = settings.smartImages !== false;
   $("force-theme").checked = settings.forceTheme !== false;
+  $("svg-filter").checked = settings.svgFilter === true;
+  $("edge-hint").hidden = !/Edg\//.test(navigator.userAgent);
 
   const aiAvailable = themeable && pageState && pageState.hasFeatures;
   $("ai-section").style.display = themeable ? "" : "none";
 
   if (!settings.enabled) {
     setStatus("Extensão desligada. Ligue pelo interruptor do topo.");
+  } else if (pageState && pageState.applied && pageState.applied.lock) {
+    setStatus("Este site pediu para ficar intacto (meta darkreader-lock) e a IA respeitou.");
+  } else if (pageState && pageState.applied && pageState.applied.forced) {
+    setStatus("Modo de cores forçadas do sistema ativo: a extensão não interfere.");
   } else if (!aiAvailable) {
     setStatus(pageState === null || !themeable
       ? "Esta página não pode ser analisada."
@@ -188,6 +195,7 @@ function wire() {
   $("invert-media").addEventListener("change", (e) => save({ invertMedia: e.target.checked }));
   $("smart-images").addEventListener("change", (e) => save({ smartImages: e.target.checked }));
   $("force-theme").addEventListener("change", (e) => save({ forceTheme: e.target.checked }));
+  $("svg-filter").addEventListener("change", (e) => save({ svgFilter: e.target.checked }));
 
   $("reanalyze").addEventListener("click", async () => {
     let tabId = null;

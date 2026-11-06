@@ -5,6 +5,7 @@ const DEFAULTS = {
   invertMedia: true,
   smartImages: true,
   forceTheme: true,
+  svgFilter: false,
 };
 
 // Chaves de schemas antigos que nao existem mais (v1.0: filtros globais;

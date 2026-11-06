@@ -13,6 +13,7 @@ const DEFAULT_SETTINGS = {
   invertMedia: true, // restaura cores originais de midias (regra classica)
   smartImages: true, // a rede de imagens decide caso a caso (icones escuros ficam claros)
   forceTheme: true, // por padrao: ignora o tema escuro do site e aplica retoque proprio
+  svgFilter: false, // modo Filter+ (matriz SVG): cores mais fieis, experimental
 };
 
 let settings = null;
@@ -302,15 +303,34 @@ function classifyImage(img) {
 
 // ---------------------------------------------------------------- decisao
 
+function hasLockMeta() {
+  // Paginas podem pedir exclusao (convencao do Dark Reader, adotada aqui).
+  return Boolean(document.querySelector("meta[name='darkreader-lock']"));
+}
+
+function forcedColorsActive() {
+  try {
+    return typeof matchMedia === "function" && matchMedia("(forced-colors: active)").matches;
+  } catch {
+    return false;
+  }
+}
+
 function computeDecision() {
   if (!settings || !settings.enabled) return { off: true };
   if (!features || !weightsModel) return null; // IA ainda nao pronta nesta frame
+
+  // Acessibilidade primeiro: modo de cores forçadas do SO fica intacto.
+  if (forcedColorsActive()) return { mode: "auto", off: true, skip: true, forced: true };
+  // O site pediu exclusao: a IA respeita.
+  if (hasLockMeta()) return { mode: "auto", off: true, invertProb: 0, skip: true, lock: true };
 
   const { p } = DarlNN.forward(weightsModel, features);
   const invert = p[0] > 0.5;
   const invertProb = Math.round(p[0] * 100) / 100;
   const sepia = 0.5 * p[3];
-  const tint = 0.25 * p[5];
+  // Piso leve de dessaturacao: reduz halation (branco puro cansa em fundo escuro).
+  const tint = Math.max(0.03, 0.25 * p[5]);
 
   // Site ja escuro: sem forceTheme, a extensao deixa a pagina em paz.
   if (!invert && !settings.forceTheme) {
@@ -318,11 +338,12 @@ function computeDecision() {
   }
 
   if (invert) {
-    // Site claro: inverte cores com os knobs do modelo.
+    // Site claro: inverte com knobs do modelo e limites WCAG:
+    // contraste no maximo 0.95 (preto invertido nao vira #000 puro) e piso de brilho.
     return {
       mode: "auto", invert: true, invertProb,
-      brightness: 0.6 + 0.8 * p[1],
-      contrast: 0.6 + 0.8 * p[2],
+      brightness: Math.max(0.75, 0.6 + 0.8 * p[1]),
+      contrast: Math.min(0.9, Math.max(0.8, 0.6 + 0.8 * p[2])),
       sepia, tint,
     };
   }
@@ -336,18 +357,98 @@ function computeDecision() {
   };
 }
 
+// ------------------------------------------------- modo SVG (Filter+ / matriz)
+
+const SVG_HOST_ID = "darl-svg-host";
+const MATRIX_ID = "darl-matrix";
+const REVERT_ID = "darl-matrix-revert";
+
+function ensureSvgFilters(decision) {
+  const values = DarlMatrix.toSVGMatrixString(
+    DarlMatrix.composeDarkMatrix({
+      sepia: decision.sepia || 0,
+      grayscale: decision.tint || 0,
+      contrast: decision.contrast || 1,
+      brightness: decision.brightness || 1,
+    })
+  );
+  const revert = DarlMatrix.toSVGMatrixString(DarlMatrix.invertNHue());
+
+  let host = document.getElementById(SVG_HOST_ID);
+  if (!host) {
+    host = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    host.id = SVG_HOST_ID;
+    host.setAttribute("width", "0");
+    host.setAttribute("height", "0");
+    host.style.position = "absolute";
+    host.innerHTML = `
+<defs>
+<filter id="${MATRIX_ID}" style="color-interpolation-filters: sRGB">
+<feColorMatrix type="matrix" values="${values}" />
+</filter>
+<filter id="${REVERT_ID}" style="color-interpolation-filters: sRGB">
+<feColorMatrix type="matrix" values="${revert}" />
+</filter>
+</defs>`;
+    (document.documentElement || document.body).appendChild(host);
+    return;
+  }
+  const m = host.querySelector("#" + MATRIX_ID + " feColorMatrix");
+  if (m && m.getAttribute("values") !== values) m.setAttribute("values", values);
+}
+
+function removeSvgFilters() {
+  const host = document.getElementById(SVG_HOST_ID);
+  if (host) host.remove();
+}
+
 function buildCSS(decision) {
   const norm = (v) => Math.round(v * 100) / 100;
   const extras =
     (decision.sepia > 0.02 ? ` sepia(${norm(decision.sepia)})` : "") +
     (decision.tint > 0.02 ? ` grayscale(${norm(decision.tint)})` : "");
+  const printGuard = `
+@media print {
+  html { filter: none !important; background: initial !important; background-color: initial !important; }
+}`;
 
   if (!decision.invert) {
     // Site ja escuro (forceTheme): leve retoque de uniformizacao, mantendo escuro.
     return `
 html {
   filter: brightness(${norm(decision.brightness)}) contrast(${norm(decision.contrast)})${extras} !important;
+}${printGuard}`;
+  }
+
+  if (settings.svgFilter) {
+    // Modo Filter+ (matriz SVG): a cadeia inteira e uma unica feColorMatrix,
+    // mais fiel aos matizes (invertNHue preserva o hue). Reverso = a propria
+    // invertNHue, involutiva. Media e regioes restauram com o reverso.
+    ensureSvgFilters(decision);
+    let css = `
+html {
+  filter: url(#${MATRIX_ID}) !important;
+  background: #ffffff !important;
+  background-color: #ffffff !important;
 }`;
+    if (settings.invertMedia) {
+      css += `
+img, video, picture, canvas, iframe, embed, object, image,
+[style*="url("] {
+  filter: url(#${REVERT_ID}) !important;
+}`;
+    }
+    if (settings.smartImages) {
+      css += `
+img.dd-keep {
+  filter: none !important;
+}`;
+    }
+    css += `
+.dd-region {
+  filter: url(#${REVERT_ID}) !important;
+}`;
+    return css + printGuard;
   }
 
   let css = `
@@ -362,22 +463,22 @@ img, video, picture, canvas, iframe, embed, object, image,
 [style*="url("] {
   filter: invert(1) hue-rotate(180deg) !important;
 }`;
+  }
+  if (settings.smartImages) {
     // A rede de imagens marca icones/logos escuros: sem o reverter, eles ficam
     // pretos em fundo escuro (invisiveis). Mantendo invertidos, viram claros.
-    if (settings.smartImages) {
-      css += `
+    css += `
 img.dd-keep {
   filter: none !important;
 }`;
-    }
-    // Blocos escuros: a inversao da pagina e neutralizada e o bloco
-    // permanece com as cores originais (decisao da rede de regioes).
-    css += `
+  }
+  // Blocos escuros: a inversao da pagina e neutralizada e o bloco
+  // permanece com as cores originais (decisao da rede de regioes).
+  css += `
 .dd-region {
   filter: invert(1) hue-rotate(180deg) !important;
 }`;
-  }
-  return css;
+  return css + printGuard;
 }
 
 function apply(decision) {
@@ -389,6 +490,7 @@ function apply(decision) {
     if (style) style.remove();
     applied = decision ? { ...decision, css: false } : { off: true };
     clearRegions();
+    removeSvgFilters();
     reveal();
     return;
   }
@@ -398,6 +500,9 @@ function apply(decision) {
     el = document.createElement("style");
     el.id = STYLE_ID;
     root.appendChild(el);
+  }
+  if (!decision.invert || !settings.svgFilter) {
+    removeSvgFilters(); // modo clasico: nao deixa svg obsoleto no DOM
   }
   const css = buildCSS(decision);
   if (el.textContent !== css) el.textContent = css; // evita mutacoes desnecessarias (loop com o observer)

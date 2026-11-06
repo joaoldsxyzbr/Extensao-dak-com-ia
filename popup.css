@@ -218,6 +218,16 @@ footer {
   color: var(--text-dim);
 }
 
+.hint-box {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--warn);
+  background: rgba(255, 179, 91, 0.08);
+  border: 1px solid rgba(255, 179, 91, 0.35);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
 button.ghost {
   background: none;
   border: 1px solid var(--border);
