@@ -2,6 +2,26 @@
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
 
+## [4.3.0] — retreino com dataset real: a IA aprende com a web de verdade
+
+### Alterado
+- **Primeiro retreino do modelo de páginas com dados reais**: o job `crawl-real`
+  coletou os 120 sites de `tools/dev/sites.txt` (119 páginas sem erro de rede) e
+  o rotulador perceptual (`tools/load-real-data.js`) aproveitou **91 páginas**
+  — 84 claras e 7 escuras; híbridos, páginas em branco e paywalls ficam de
+  fora de propósito (rótulo sem confiança não entra no treino). Cada página
+  real vale por 8 sintéticas no treino; holdout e gates continuam sintéticos
+  e determinísticos para comparar versões entre si.
+- `weights-page.js` regravado pela floresta GBDT: holdout **100%** (MSE
+  0,00026 ≤ 0,001), casos-chave **PRADO 1,00**, **TELEGRAM_DARK 0,00** e
+  **ROCKET 1,00**, 15 arquétipos OK — mesma régua das versões anteriores.
+- Dataset real versionado em `tools/dev/data/report-*.json` (commit de volta
+  pelo próprio CI): retreino fica reproduzível em qualquer máquina.
+
+### Adicionado
+- 4 testes do rotulador de dados reais (clara/escura rotuladas, blank e híbrido
+  descartados): suite em **71 testes**.
+
 ## [4.2.1] — coleta de dados reais ampliada (infra)
 
 ### Adicionado
