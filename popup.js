@@ -6,6 +6,7 @@ const DEFAULT_SETTINGS = {
   smartImages: true,
   forceTheme: true,
   svgFilter: false,
+  elementMode: true,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -41,6 +42,7 @@ function render() {
   $("smart-images").checked = settings.smartImages !== false;
   $("force-theme").checked = settings.forceTheme !== false;
   $("svg-filter").checked = settings.svgFilter === true;
+  $("element-mode").checked = settings.elementMode !== false;
   $("edge-hint").hidden = !/Edg\//.test(navigator.userAgent);
 
   const aiAvailable = themeable && pageState && pageState.hasFeatures;
@@ -76,6 +78,9 @@ function render() {
       if (!applied.invert) {
         setStatus("O site já é escuro: a IA aplicou um retoque para uniformizar (sem inversão).");
         $("chip-invert").textContent = "Retoque escuro";
+      } else if (applied.engine === "elements") {
+        setStatus("A IA leu as cores de cada elemento e remapeou uma a uma (sem filtro global de inversão).");
+        $("chip-invert").textContent = "Por elemento";
       } else {
         setStatus("A mini rede neural leu as cores da página e aplicou este tema:");
         $("chip-invert").textContent = "Inversão ativada";
@@ -155,6 +160,23 @@ function wire() {
   $("smart-images").addEventListener("change", (e) => save({ smartImages: e.target.checked }));
   $("force-theme").addEventListener("change", (e) => save({ forceTheme: e.target.checked }));
   $("svg-filter").addEventListener("change", (e) => save({ svgFilter: e.target.checked }));
+  $("element-mode").addEventListener("change", (e) => save({ elementMode: e.target.checked }));
+
+  $("export-data").addEventListener("click", async () => {
+    const btn = $("export-data");
+    btn.disabled = true;
+    btn.textContent = "Exportando...";
+    try {
+      const res = await chrome.runtime.sendMessage({ type: "darl-export-data" });
+      btn.textContent = res && res.ok ? `Baixado (${res.count} registros)` : "Nada para exportar ainda";
+    } catch {
+      btn.textContent = "Falha na exportação";
+    }
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = "Exportar dados de navegação";
+    }, 2500);
+  });
 
   $("reanalyze").addEventListener("click", async () => {
     let tabId = null;
