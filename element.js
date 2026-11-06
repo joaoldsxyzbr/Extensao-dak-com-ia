@@ -18,6 +18,7 @@
 (function (global) {
   const STYLE_ID = "darl-element-style";
   const MARK_ATTR = "darl-el";
+  const GUARD_ATTR = "darl-guard"; // elemento ja coberto pela guarda de interacao
   const MAX_ELEMENTS = 8000; // acima disso: fallback para modo filtro (v4.1: chats SPAs como Rocket.Chat passam de 4000)
   const BATCH = 120;
   const RESCAN_MS = 1500;
@@ -162,6 +163,8 @@
   let styleEl = null;
   let styleText = "";
   let markId = 0;
+  let guardId = 0;
+  let guardListeners = null;
   let observer = null;
   let rescanTimer = null;
   let scanning = false;
@@ -179,7 +182,7 @@
 html { background-color: #17181d !important; color-scheme: dark !important; }
 /* icones/logos escuros: a rede de imagens os marca e aqui eles viram claros */
 img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; }
-@media print { [${MARK_ATTR}] { background-color: revert !important; color: revert !important; border-color: revert !important; } html { background-color: revert !important; } }`;
+@media print { [${MARK_ATTR}], [${GUARD_ATTR}] { background-color: revert !important; color: revert !important; border-color: revert !important; } html { background-color: revert !important; } }`;
     styleEl.textContent = styleText;
     return styleEl;
   }
@@ -320,6 +323,72 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     }, RESCAN_MS);
   }
 
+  // --------------------------------------------------- guarda de interacao
+  //
+  // Regras de interacao (:hover, :focus, :active) e overlays em
+  // pseudo-elementos (::before/::after) NAO existem no estilo computado
+  // em repouso: a varredura estatica nao os ve. O tema claro original
+  // costuma ter "hover branco" - elemento transparente em repouso ganha
+  // fundo claro com o mouse em cima, e o texto (claro, remanejado ou nao)
+  // fica ilegivel. A guarda observa mouseover/focusin em tempo real:
+  // quando um elemento ESTA claro naquele instante, o remapeamento e
+  // congelado numa regra permanente do elemento. Cobre tambem cores via
+  // var() e estilos inline trocados por JS - o valor LIDO ja resolvido.
+
+  // Pura: dado o estado computado AGORA (com hover/foco ativo), devolve
+  // as declaracoes que congelam o remapeamento escuro. Testavel sem DOM.
+  function guardDecls(bg, bgImage, fg) {
+    const out = [];
+    if (bg && bg.a > 0.04 && lum255(bg.r, bg.g, bg.b) >= BG_LIGHT) {
+      out.push(`background-color: ${mapBackground(bg).css} !important`);
+    }
+    if (typeof bgImage === "string" && bgImage.includes("gradient(")) {
+      const g = remapGradient(bgImage);
+      if (g) out.push(`background-image: ${g} !important`);
+    }
+    if (fg && fg.a > 0.04 && lum255(fg.r, fg.g, fg.b) <= TEXT_DARK) {
+      out.push(`color: ${mapText(fg, CANVAS_L).css} !important`);
+    }
+    return out;
+  }
+
+  function guardInteraction(el) {
+    if (!el || el.nodeType !== 1) return;
+    if (SKIP_TAGS.has(el.tagName) || el.id === STYLE_ID || el.id === "darl-dark-style" || el.id === "darl-flash-cover" || el.id === "darl-svg-host") return;
+    if (el.hasAttribute(GUARD_ATTR)) return; // ja coberto
+    let decls = [], before = [], after = [];
+    try {
+      const cs = getComputedStyle(el);
+      decls = guardDecls(DarlFeatures.parseRGB(cs.backgroundColor), cs.backgroundImage, DarlFeatures.parseRGB(cs.color));
+      const pb = getComputedStyle(el, "::before");
+      before = guardDecls(DarlFeatures.parseRGB(pb.backgroundColor), pb.backgroundImage, null);
+      const pa = getComputedStyle(el, "::after");
+      after = guardDecls(DarlFeatures.parseRGB(pa.backgroundColor), pa.backgroundImage, null);
+    } catch {
+      return; // estilo imparsavel: nao congela nada
+    }
+    if (!decls.length && !before.length && !after.length) return;
+    const id = String(++guardId);
+    try { el.setAttribute(GUARD_ATTR, id); } catch { return; }
+    const base = `[${GUARD_ATTR}="${id}"]`;
+    let text = "";
+    if (decls.length) text += `\n${base} { ${decls.join("; ")}; }`;
+    if (before.length) text += `\n${base}::before { ${before.join("; ")}; }`;
+    if (after.length) text += `\n${base}::after { ${after.join("; ")}; }`;
+    styleText += text;
+    flushStyle();
+  }
+
+  // mouseover/focusin delegados: cobre o alvo e os ancestrais proximos
+  // (regra tipo "li:hover" estiliza o LI, mas o evento nasce num filho).
+  function onPointerEvent(evt) {
+    if (!active) return;
+    let el = evt.target;
+    for (let i = 0; el && el.nodeType === 1 && i < 5; i++, el = el.parentElement) {
+      guardInteraction(el);
+    }
+  }
+
   // ------------------------------------------------------------- API global
 
   function start(decision, hooks) {
@@ -338,12 +407,22 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
       });
       observer.observe(document.documentElement, { childList: true, subtree: true });
     }
+    // guarda de interacao: hover/foco em tempo real (capture para nao
+    // depender do site parar a propagacao)
+    if (typeof document.addEventListener === "function") {
+      guardListeners = [["mouseover", onPointerEvent], ["focusin", onPointerEvent]];
+      for (const [ev, fn] of guardListeners) document.addEventListener(ev, fn, { capture: true, passive: true });
+    }
     return true;
   }
 
   function stop() {
     active = false;
     if (observer) { observer.disconnect(); observer = null; }
+    if (guardListeners) {
+      for (const [ev, fn] of guardListeners) document.removeEventListener(ev, fn, { capture: true });
+      guardListeners = null;
+    }
     if (rescanTimer !== null) { clearTimeout(rescanTimer); rescanTimer = null; }
     queue = [];
     scanning = false;
@@ -352,9 +431,10 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     if (styleEl) { styleEl.remove(); styleEl = null; }
     styleText = "";
     markId = 0;
+    guardId = 0;
     try {
-      const marked = document.querySelectorAll("[" + MARK_ATTR + "]");
-      for (const el of marked) el.removeAttribute(MARK_ATTR);
+      const marked = document.querySelectorAll(`[${MARK_ATTR}], [${GUARD_ATTR}]`);
+      for (const el of marked) { el.removeAttribute(MARK_ATTR); el.removeAttribute(GUARD_ATTR); }
     } catch {
       /* DOM ja destruido */ }
   }
@@ -364,10 +444,10 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     isActive: () => active,
     // funcoes puras expostas para os testes (tools/test-nn.js)
     mapBackground, mapText, mapNeutral, remapGradient, remapShadow,
-    rgbToHsl, lum255: (r, g, b) => lum255(r, g, b),
+    rgbToHsl, lum255: (r, g, b) => lum255(r, g, b), guardDecls,
     parseColorList,
-    STYLE_ID, MARK_ATTR, MAX_ELEMENTS,
-    _internals: { BG_LIGHT, TEXT_DARK, CANVAS_L, contrastRatio, elementRule },
+    STYLE_ID, MARK_ATTR, GUARD_ATTR, MAX_ELEMENTS,
+    _internals: { BG_LIGHT, TEXT_DARK, CANVAS_L, contrastRatio, elementRule, guardInteraction },
   };
 
   global.DarlElement = api;
