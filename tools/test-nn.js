@@ -10,7 +10,9 @@ const src =
   fs.readFileSync(path.join(root, "weights-page.js"), "utf8") + "\n" +
   fs.readFileSync(path.join(root, "weights-images.js"), "utf8") + "\n" +
   fs.readFileSync(path.join(root, "weights-region.js"), "utf8") + "\n" +
-  fs.readFileSync(path.join(root, "nn.js"), "utf8");
+  fs.readFileSync(path.join(root, "nn.js"), "utf8") + "\n" +
+  fs.readFileSync(path.join(root, "darl-features.js"), "utf8") + "\n" +
+  fs.readFileSync(path.join(root, "element.js"), "utf8");
 (0, eval)(src); // escopo global, igual ao carregamento dos scripts na extensao
 
 const { DarlNN, DARL_PAGE_WEIGHTS, DARL_IMAGE_WEIGHTS, DARL_REGION_WEIGHTS } = globalThis;
@@ -39,9 +41,10 @@ function vec(fields) {
   return x;
 }
 
-const pageNet = DarlNN.makeNet(DARL_PAGE_WEIGHTS.dims, DARL_PAGE_WEIGHTS);
+// O modelo de paginas pode ser MLP ou floresta GBDT: o despachante abstrai.
+const pageModel = DarlModel.makeModel(DARL_PAGE_WEIGHTS);
 function decidePage(x) {
-  const p = DarlNN.forward(pageNet, x).p;
+  const p = DarlModel.forward(pageModel, x).p;
   return {
     p,
     invert: p[0] > 0.5,
@@ -234,17 +237,68 @@ expect(regionKeep([0.05, 0.2, 0.7, 0.6, 0.3, 0, 0, 0.85]) === true,
   "regiao: area de video escura -> manter original");
 
 
+// ------------------------------------------------- motor por elemento (v4)
+// As funcoes de remapeamento de cor do element.js sao puras: testadas sem DOM.
+const DE = globalThis.DarlElement;
+const lumCss = (css) => { const c = DarlFeatures.parseRGB(css); return DarlFeatures.lum(c.r, c.g, c.b); };
+
+const mb = DE.mapBackground({ r: 255, g: 255, b: 255, a: 1 });
+expect(lumCss(mb.css) < 0.2 && lumCss(mb.css) > 0.02,
+  "elemento: fundo branco -> escuro (nunca preto puro)", mb.css);
+
+const mbBlue = DE.mapBackground({ r: 173, g: 216, b: 230, a: 1 });
+const cb = DarlFeatures.parseRGB(mbBlue.css);
+expect(cb.b > cb.r, "elemento: fundo azul claro continua azul no escuro", mbBlue.css);
+
+const mt = DE.mapText({ r: 10, g: 10, b: 10, a: 1 }, 0.12);
+const ct = DarlFeatures.parseRGB(mt.css);
+const ratioT = DarlFeatures.contrastRatio(DarlFeatures.lum(ct.r, ct.g, ct.b), 0.12);
+expect(ratioT >= 4.5, "elemento: texto escuro vira claro com contraste WCAG AA",
+  `${mt.css} ratio=${ratioT.toFixed(1)}`);
+
+const mtLink = DE.mapText({ r: 0, g: 0, b: 238, a: 1 }, 0.12);
+const cl = DarlFeatures.parseRGB(mtLink.css);
+expect(cl.b > cl.r && cl.b > 100, "elemento: link azul continua azul e legivel", mtLink.css);
+
+const grad = "linear-gradient(rgb(255, 255, 255), rgb(230, 230, 230))";
+const g = DE.remapGradient(grad);
+expect(g && g !== grad && lumCss(g.match(/rgba?\([^)]*\)/g)[0]) < 0.2,
+  "elemento: gradiente claro -> gradiente escuro", g);
+
+const sh = DE.remapShadow("rgba(255, 255, 255, 0.5) 0px 1px 2px", 0.12);
+expect(sh && !/255,\s*255,\s*255/.test(sh), "elemento: sombra branca vira sombra escura", sh);
+
+const shDark = DE.remapShadow("rgba(0, 0, 0, 0.2) 0px 2px 4px", 0.12);
+expect(shDark === null, "elemento: sombra ja escura fica como esta", String(shDark));
+
+const mbA = DE.mapBackground({ r: 255, g: 255, b: 255, a: 0.4 });
+expect(DarlFeatures.parseRGB(mbA.css) && Math.abs(DarlFeatures.parseRGB(mbA.css).a - 0.4) < 0.05,
+  "elemento: fundo translucido preserva o alpha", mbA.css);
+
+expect(DE.parseColorList("rgb(1, 2, 3) rgba(4, 5, 6, 0.5)").length === 2,
+  "elemento: parser de listas de cores");
+
 // ------------------------------------------------- infra
-const ser = DarlNN.serialize(pageNet);
-expect(DarlNN.compatible(ser, DARL_PAGE_WEIGHTS.dims), "serializacao compativel com o modelo");
-expect(!DarlNN.compatible({ dims: [11, 16, 12, 4] }, DARL_PAGE_WEIGHTS.dims),
+const dimsRef = [32, 32, 24, 6];
+const refNet = DarlNN.makeNet(dimsRef);
+const ser = DarlNN.serialize(refNet);
+expect(DarlNN.compatible(ser, dimsRef), "serializacao compativel com o modelo");
+expect(!DarlNN.compatible({ dims: [11, 16, 12, 4] }, dimsRef),
   "pesos da v1 (11 features) rejeitados pela guarda de compatibilidade");
 const again = DarlNN.makeNet(ser.dims, ser);
 const p1 = DarlNN.forward(again, LIGHT).p;
-const p2 = DarlNN.forward(pageNet, LIGHT).p;
+const p2 = DarlNN.forward(refNet, LIGHT).p;
 expect(p1.every((v, i) => near(v, p2[i], 1e-4)), "serializacao round-trip",
   `json=${JSON.stringify(ser).length} bytes`);
-expect(JSON.stringify(ser).length < 40000, "pesos compactos para o storage");
+
+// despachante de modelo: a floresta GBDT do weights-page.js carrega pelo
+// DarlModel e sobrevive a um round-trip JSON identica
+expect(DARL_PAGE_WEIGHTS.kind === "gbdt", "modelo de paginas atual e floresta GBDT");
+const pageModel2 = DarlModel.makeModel(JSON.parse(JSON.stringify(DARL_PAGE_WEIGHTS)));
+const pg1 = DarlModel.forward(pageModel2, LIGHT).p;
+const pg2 = DarlModel.forward(pageModel, LIGHT).p;
+expect(pg1.every((v, i) => near(v, pg2[i], 1e-6)), "floresta round-trip via JSON",
+  `${DARL_PAGE_WEIGHTS.trees.length} arvores`);
 
 const tiny = DarlNN.makeNet([3, 4, 1]);
 const xs = [[0.1, 0.2, 0.3], [0.8, 0.1, 0.5], [0.5, 0.9, 0.2], [0.3, 0.3, 0.9]];
