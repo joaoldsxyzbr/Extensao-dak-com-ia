@@ -2,6 +2,33 @@
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
 
+## [4.3.2] — bolinha de presença viva e cobertura total em chats gigantes
+
+### Corrigido
+- **Acentos apagados** (bolinha de online, badges): o motor por elemento
+  tratava cores vivas como "fundo claro" e as escurecia — o verde de
+  presença virava um verde apagado. Elementos minúsculos (≤ 14px) com cor
+  clara e saturada agora **mantêm a cor original**: a cor viva é o sinal
+  visual (`element.js`, regra pura testada). A guarda de interação
+  respeita o acento: hover na bolinha não congela um fundo escurecido.
+- **Chats gigantes meio remapeados** (visão de conversa do Rocket.Chat,
+  chat.pradoapp.com): a página passa de 8000 elementos — o teto do motor —
+  e ficava com a casca escura mas balões/campo de digitação/painéis claros
+  vazando (o pior estado possível). Teto elevado para **30000 elementos**;
+  o `<style>` do motor agora recebe só o delta de regras (flush
+  incremental), senão reescrever MBs por lote viraria quadrático.
+- **Oscilação motor↔filtro**: ao estourar o teto, o motor caía no filtro,
+  o re-scan de SPA re-entrava no motor, estourava de novo e a página
+  piscava entre os dois estados sem parar. O fallback agora é **lacrado**
+  até a próxima navegação (`engineFellBack` no `content.js`).
+
+### Observado
+- Diagnóstico com dataLog real exportado da visão de conversa: a decisão
+  da IA já estava correta (inverter com motor por elemento, p = 1.0 —
+  família CHAT_HYBRID); o defeito era do **motor**, não do modelo. Sem
+  retreino, sem mudança de pesos — o dataset de reprodução segue intacto.
+- Suite: **83 testes** (+9 de acentos vivos, teto do motor e guarda).
+
 ## [4.3.1] — rotulador desambigua híbridos pelo conteúdo
 
 ### Alterado
