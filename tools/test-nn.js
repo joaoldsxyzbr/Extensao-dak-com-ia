@@ -88,6 +88,18 @@ expect(d.invert === false && d.brightness > decidePage(DARK).brightness,
 d = decidePage(MIXED);
 expect(d.invert === true, "MIXED -> inverter");
 
+// app de mensagens hibrido (painel lateral escuro + chat claro)
+const MSG = vec({ htmlBg: 0.9, meanBg: 0.62, h0: 0.22, h1: 0.08, h6: 0.13, h7: 0.37,
+  fracWithBg: 0.5, fracDark: 0.32, fracLight: 0.42, textLum: 0.48, contrast: 0.66,
+  satMean: 0.3, colorful: 0.3, imgFrac: 0.04, mono: 0.02, fontMean: 0.45,
+  smallUi: 0.3, fixedFrac: 0.18, navN: 0.5, formN: 0.35, mediaN: 0.25, metaDark: 0 });
+d = decidePage(MSG);
+expect(d.invert === true, "MESSAGING -> inverter", `brilho=${d.brightness.toFixed(2)}`);
+const msgTemp = DARL_PAGE_WEIGHTS.temp || 1;
+const msgConf = DarlNN.calibrate(d.p[0], msgTemp);
+expect(msgConf >= 0.75, "MESSAGING -> confianca alta na decisao (antes ~56%)",
+  `conf=${msgConf.toFixed(2)}`);
+
 // ------------------------------------------------- calibracao de temperatura
 // A extensao e inference-only: nao ha mais treino no navegador (v2.0.0).
 const temp = DARL_PAGE_WEIGHTS.temp || 1;
