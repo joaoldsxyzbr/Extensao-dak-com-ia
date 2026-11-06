@@ -1,0 +1,17 @@
+# Sites reais para o crawler semanal (uma URL por linha).
+# O job de CI "crawl-real" visita cada um, tira screenshots antes/depois,
+# extrai as 32 features reais e grava tools/dev/out/report.json — a
+# matéria-prima para o retreino do modelo de páginas com dados reais.
+# Linhas com # sao ignoradas.
+https://example.com
+https://www.wikipedia.org
+https://news.ycombinator.com
+https://github.com
+https://www.reddit.com
+https://web.telegram.org
+https://mail.google.com
+https://www.youtube.com
+https://twitter.com
+https://www.globo.com
+https://www.uol.com.br
+https://stackoverflow.com
