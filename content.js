@@ -822,17 +822,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     });
     return undefined;
   }
-  if (msg.type === "darl-dump") {
-    // Dump para treino: features reais da pagina + decisao atual da IA.
-    sendResponse({
-      ok: features !== null,
-      host: HOST,
-      path: location.pathname,
-      features,
-      applied,
-    });
-    return undefined;
-  }
   if (msg.type === "darl-refresh") {
     try {
       extractAndRefresh();
