@@ -1,4 +1,4 @@
-# Darl Dark
+# Extensão Dark com IA
 
 Extensão Chrome (Manifest V3) de modo escuro dirigida por mini redes neurais que rodam
 inteiramente dentro da extensão, sem servidor nem bibliotecas.
