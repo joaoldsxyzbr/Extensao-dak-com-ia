@@ -14,22 +14,28 @@ const DIMS = [8, 12, 1];
 
 // keep=1 -> manter original (bloco escuro preservado)
 const ARCH = [
-  { name: "DARK_HEADER", w: 0.22, keep: 1,
+  { name: "DARK_SIDEBAR", w: 0.10, keep: 1, // painel lateral fixo escuro (apps de mensagens)
+    f: [0.06, 0.15, 0.85, 0.80, 0.28, 1.00, 0.00, 0.02],
+    vary: { 0: 0.03, 2: 0.05, 3: 0.05, 4: 0.10 } },
+  { name: "DARK_VIDEO", w: 0.08, keep: 1, // area de player/video escura: manter original
+    f: [0.05, 0.20, 0.70, 0.60, 0.30, 0.00, 0.00, 0.85],
+    vary: { 0: 0.03, 3: 0.08, 4: 0.10, 7: 0.10 } },
+  { name: "DARK_HEADER", w: 0.20, keep: 1,
     f: [0.10, 0.30, 0.85, 0.80, 0.12, 0.80, 0.00, 0.05],
     vary: { 0: 0.05, 1: 0.15, 2: 0.06, 3: 0.06, 4: 0.06, 5: 0.25 } },
-  { name: "DARK_FOOTER", w: 0.15, keep: 1,
+  { name: "DARK_FOOTER", w: 0.12, keep: 1,
     f: [0.08, 0.20, 0.80, 0.75, 0.08, 0.00, 0.00, 0.03],
     vary: { 0: 0.04, 2: 0.05, 3: 0.05, 4: 0.04 } },
-  { name: "DARK_HERO", w: 0.18, keep: 1,
+  { name: "DARK_HERO", w: 0.15, keep: 1,
     f: [0.25, 0.35, 0.90, 0.70, 0.45, 0.00, 1.00, 0.05],
     vary: { 0: 0.12, 1: 0.15, 2: 0.06, 3: 0.08, 4: 0.20 } },
-  { name: "DARK_CARD", w: 0.20, keep: 1,
+  { name: "DARK_CARD", w: 0.15, keep: 1,
     f: [0.12, 0.25, 0.85, 0.80, 0.05, 0.00, 0.00, 0.02],
     vary: { 0: 0.05, 1: 0.12, 2: 0.06, 3: 0.06, 4: 0.03 } },
-  { name: "MID_PANEL", w: 0.10, keep: 0,
+  { name: "MID_PANEL", w: 0.08, keep: 0,
     f: [0.40, 0.15, 0.50, 0.50, 0.20, 0.00, 0.00, 0.05],
     vary: { 0: 0.05, 1: 0.10, 2: 0.10, 3: 0.10, 4: 0.10 } },
-  { name: "LIGHT_CONTENT", w: 0.15, keep: 0,
+  { name: "LIGHT_CONTENT", w: 0.12, keep: 0,
     f: [0.85, 0.10, 0.12, 0.85, 0.50, 0.00, 0.00, 0.05],
     vary: { 0: 0.08, 1: 0.08, 2: 0.05, 3: 0.05, 4: 0.25 } },
 ];
