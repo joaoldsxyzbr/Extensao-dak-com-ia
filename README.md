@@ -7,20 +7,28 @@ inteiramente dentro da extensão, sem servidor nem bibliotecas.
 
 ```
 página carrega (com tampa escura anti-flash desde o document_start)
-→ content.js extrai 32 features (histograma de luminância, frações
+→ darl-features.js extrai 32 features (histograma de luminância, frações
   escura/clara, contraste do texto, saturação vívida, fontes mono/título/pequenas,
   position fixed, marcadores semânticos: article nav table form mídia...)
-→ rede de páginas (32 → 32 → 24 → 6) em nn.js
-→ decisões: inverter / retoque escuro / não mexer + brilho, contraste, sépia, dim, tint
-→ em páginas invertidas: rede de regiões (8 → 12 → 1) neutraliza a inversão em
-  blocos escuros grandes (header, footer, hero, card de código)
-→ rede de imagens (6 → 12 → 1) decide por imagem restaurar ou manter invertida
+→ modelo de páginas em nn.js: floresta GBDT (v4; antes MLP) decide
+  inverter / retoque escuro / não mexer
+→ site claro: motor por elemento (element.js) lê o estilo computado de CADA
+  elemento e remapeia cor por cor — fundos claros escurecem mantendo o matiz,
+  textos escuros clareiam com guarda WCAG 4.5:1, bordas, sombras e gradientes
+  junto; páginas híbridas ficam certas porque cada região é tratada de acordo
+  com a própria cor original
+→ páginas grandes demais ou erro na varredura: fallback automático para o modo
+  filtro clássico (invert + hue-rotate), com rede de regiões (8 → 12 → 1)
+  neutralizando blocos escuros grandes
+→ rede de imagens (6 → 12 → 1) decide por imagem: no modo por elemento, ícones
+  escuros transparentes viram claros (inversão local), fotos seguem originais
 → conteúdo revelado já com o tema aplicado (boot cover com timeout de segurança)
-treino offline (tools/train-*.js, pipeline nnlab: Adam, cosine LR, weight decay,
-  holdout, early stopping, calibração de temperatura) → pesos embutidos na extensão
+treino offline (tools/train-page-gbdt.js para a floresta; pipeline nnlab para
+  imagens/regiões) → pesos embutidos na extensão
 ```
 
-- Sites claros: a rede inverte as cores (imagens e vídeos voltam ao original).
+- Sites claros: o motor por elemento remapeia as cores uma a uma, sem filtro
+  global de inversão (imagens e vídeos ficam com as cores originais).
 - Imagens: a segunda rede (6→12→1) decodifica cada `<img>` num canvas 16×16 e decide
   por imagem entre restaurar as cores originais (fotos, logos) ou manter invertida
   (ícones escuros com transparência ficam claros e visíveis no fundo escuro).
@@ -37,9 +45,15 @@ treino offline (tools/train-*.js, pipeline nnlab: Adam, cosine LR, weight decay,
   bruto, dashboard escuro saturado, tema escuro bem desenhado (Telegram/
   Discord/GitHub dark) e AMOLED preto puro — com dim e tint por arquétipo.
 - Só a IA decide: não existe ajuste manual por site. Há apenas chaves globais
-  (forçar tema, análise de imagens, restaurar mídias, modo SVG) e o interruptor
-  geral. A "confiança 98%" do popup é calibrada por temperatura (Guo et al. 2017)
-  minimizada no holdout — a porcentagem significa o que diz.
+  (análise por elemento, forçar tema, análise de imagens, restaurar mídias,
+  modo SVG) e o interruptor geral. A "confiança 98%" do popup é calibrada por
+  temperatura (Guo et al. 2017) minimizada no holdout — a porcentagem significa
+  o que diz.
+- Dados reais para o retreino: a extensão registra localmente as features e a
+  decisão de cada página vista (host + 32 features + saída da IA, sem
+  querystring) e o popup exporta um JSON ("Exportar dados de navegação").
+  Nada sai do navegador sem esse clique. O crawler de regressão visual
+  (`tools/dev/`) complementa com screenshots e métricas perceptuais no CI.
 - `chrome.storage.local.hostCache` memoriza a última decisão por host: nas revisitas,
   o tema é aplicado na hora (anti-flash) e a rede refina depois.
 - SPAs (YouTube, Reddit): `MutationObserver` com throttle reanalisa a página quando
@@ -49,20 +63,25 @@ treino offline (tools/train-*.js, pipeline nnlab: Adam, cosine LR, weight decay,
 
 | Arquivo | Papel |
 |---|---|
-| `manifest.json` | Manifest V3; permissões mínimas (`storage`, `activeTab`) |
-| `content.js` | Features, decisão, aplicação do CSS, cache anti-flash |
-| `nn.js` | Motor MLP genérico: forward + backpropagation (as três redes) |
-| `weights-page.js` | Pesos da rede de páginas v2 (gerado pelo treinador) |
+| `manifest.json` | Manifest V3; permissões mínimas (`storage`, `activeTab`, `downloads`) |
+| `darl-features.js` | Extração das 32 features (compartilhada com o crawler) |
+| `element.js` | Motor de análise por elemento: remapeia cor por cor (v4) |
+| `content.js` | Decisão, aplicação do tema, cache anti-flash, registro de dados |
+| `nn.js` | Motores: MLP + floresta GBDT (despachante `DarlModel`) e matrizes SVG |
+| `weights-page.js` | Modelo de páginas: floresta GBDT (gerado por `train-page-gbdt.js`) |
 | `weights-images.js` | Pesos da rede de imagens |
 | `weights-region.js` | Pesos da rede de regiões (gerado pelo treinador) |
-| `popup.html/css/js` | Controles e análise (somente leitura das decisões da IA) |
-| `background.js` | Atalho Alt+Shift+D e migração de schema no `onInstalled` |
-| `tools/nnlab.js` | Laboratório compartilhado: Adam, mini-batch, cosine LR, weight decay, holdout, early stopping, calibração |
-| `tools/train-page-model.js` | Treinador da rede de páginas (regenera `weights-page.js`) |
+| `popup.html/css/js` | Controles, análise e exportação de dados (somente leitura das decisões da IA) |
+| `background.js` | Atalho Alt+Shift+D, migração de schema e download do JSON exportado |
+| `tools/page-dataset.js` | Fonte única dos 14 arquétipos e do gerador de datasets |
+| `tools/gbdt.js` | Gradient boosting puro (árvores CART multi-saída em JS) |
+| `tools/train-page-gbdt.js` | Treinador da floresta de páginas (regenera `weights-page.js`) |
+| `tools/train-page-model.js` | Treinador MLP alternativo (registro histórico do duelo) |
 | `tools/train-region-model.js` | Treinador da rede de regiões (regenera `weights-region.js`) |
 | `tools/train-image-model.js` | Treinador da rede de imagens (regenera `weights-images.js`) |
 | `tools/generate_icons.py` | Gera os ícones PNG (sem dependências) |
-| `tools/test-nn.js` | Testes das três redes, matrizes SVG e calibração |
+| `tools/test-nn.js` | Testes das três redes, floresta, motor por elemento e calibração |
+| `tools/dev/` | Crawler Playwright + métricas perceptuais (regressão visual no CI; deps só aqui) |
 
 ## Documentação
 
