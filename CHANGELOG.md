@@ -2,6 +2,18 @@
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
 
+## [2.2.0]
+
+### Adicionado
+- Arquétipo MESSAGING na rede de páginas (treinador): apps de mensagens
+  híbridos (painel lateral escuro + área de chat clara) agora recebem decisão
+  de inversão com confiança alta — antes ficavam na fronteira (~56%).
+- Caso-chave no test-nn.js fixando a expectativa para páginas de mensagens.
+
+### Removido
+- Botão "Copiar dados da análise" do popup (a cópia falhava no Chrome) e o
+  handler correspondente no content script.
+
 ## [2.1.0]
 
 ### Adicionado
