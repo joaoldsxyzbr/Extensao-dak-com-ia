@@ -37,6 +37,9 @@ jobs:
   # screenshots antes/depois com a extensao carregada e metricas perceptuais.
   visual:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -51,7 +54,37 @@ jobs:
 
       - name: Crawler nas fixtures (gate)
         working-directory: tools/dev
-        run: node crawl.js --fixtures
+        run: |
+          mkdir -p out
+          set -o pipefail
+          node crawl.js --fixtures 2>&1 | tee out/crawl-output.txt
+
+      # Logs de job exigem auth para ler; o diagnostico vai numa issue para
+      # ser legivel de fora do GitHub (API publica).
+      - name: Diagnostico em issue (auto, so em falha)
+        if: failure()
+        working-directory: tools/dev
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "## Saida do crawler"
+            echo '```'
+            cat out/crawl-output.txt 2>/dev/null || echo "(sem saida do crawler)"
+            echo '```'
+            echo "## report.json"
+            echo '```json'
+            cat out/report.json 2>/dev/null || echo '"(sem report.json)"'
+            echo '```'
+          } > /tmp/diag.md
+          jq -n --arg t "[auto] Regressao visual falhou (run $GITHUB_RUN_ID)" \
+                --rawfile b /tmp/diag.md \
+                '{title: $t, body: $b}' > /tmp/issue.json
+          curl -sf -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues" \
+            -d @/tmp/issue.json
 
       - name: Publicar screenshots e relatorio
         if: always()
