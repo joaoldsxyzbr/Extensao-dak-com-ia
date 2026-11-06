@@ -24,6 +24,11 @@ let regionNet = null; // rede de regioes: blocos escuros em paginas invertidas
 let features = null; // cache das features desta frame
 let applied = null; // o que esta aplicado agora: { mode, invert, brightness, contrast, sepia, invertProb }
 let pipelineReady = false;
+// v4.3.2: paginas gigantes que estouram o teto do motor caem no filtro classico.
+// Sem este lacre, o re-scan de SPA re-entrava no motor, estourava de novo e a
+// pagina oscilava entre meio-remapeada e invertida sem parar. Uma vez caida,
+// fica no filtro ate a proxima navegacao (o script recarrega e reseta).
+let engineFellBack = false;
 
 // ---------------------------------------------------------------- utilidades
 
@@ -359,20 +364,27 @@ function apply(decision) {
 
   // Motor por elemento (v4): remapeia cor por cor; a tampa anti-flash so
   // levanta quando o primeiro lote de regras foi aplicado (hooks.onApplied).
-  // Pagina grande demais ou erro na varredura -> fallback para o filtro.
+  // Pagina grande demais ou erro na varredura -> fallback para o filtro
+  // (estavel: o lacre engineFellBack impede a oscilacao motor<->filtro).
   if (decision.engine === "elements") {
     if (style) style.remove();
     removeSvgFilters();
-    if (!DarlElement.isActive()) {
-      DarlElement.start(decision, {
-        onApplied: reveal,
-        onFallback: () => apply({ ...decision, engine: "filter" }),
-      });
+    if (!engineFellBack) {
+      if (!DarlElement.isActive()) {
+        DarlElement.start(decision, {
+          onApplied: reveal,
+          onFallback: () => {
+            engineFellBack = true;
+            apply({ ...decision, engine: "filter" });
+          },
+        });
+      }
+      applied = { ...decision, css: true };
+      clearRegions(); // sem filtro global, nao ha regioes para neutralizar
+      queueImages();
+      return;
     }
-    applied = { ...decision, css: true };
-    clearRegions(); // sem filtro global, nao ha regioes para neutralizar
-    queueImages();
-    return;
+    decision = { ...decision, engine: "filter" }; // lacre: segue como filtro
   }
 
   if (DarlElement.isActive()) DarlElement.stop();
