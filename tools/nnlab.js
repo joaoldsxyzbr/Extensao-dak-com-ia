@@ -1,4 +1,4 @@
-// Laboratorio de treino compartilhado (Darl Dark). Uso: node.
+// Laboratorio de treino compartilhado (Extensão Dark com IA). Uso: node.
 // Pipeline moderno para MLPs pequenas:
 //   Adam (Kingma & Ba, com bias correction) + mini-batches
 //   + cosine decay da taxa de aprendizado (Loshchilov & Hutter)
