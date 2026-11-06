@@ -2,6 +2,49 @@
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
 
+## [4.0.0] — motor por elemento, GBDT e ciclo de dados reais
+
+### Adicionado
+- Motor de análise por elemento (`element.js`): em páginas claras, a extensão
+  lê o estilo computado de cada nó do DOM e remapeia cor por cor — fundos
+  claros escurecem com o matiz preservado, textos escuros clareiam com guarda
+  WCAG AA (4.5:1), bordas, sombras, gradientes e `fill`/`stroke` de SVG junto.
+  Páginas híbridas (sidebar escura + chat claro, o caso Prado/Telegram-web)
+  ficam certas sem rede de regiões; fotos e vídeos ficam intactos por
+  construção. Varredura incremental com `requestIdleCallback`, teto de 4000
+  elementos e re-scan throttled para SPAs; acima do teto ou em erro, fallback
+  automático para o modo filtro clássico. `color-scheme: dark` escurece
+  controles nativos e scrollbar.
+- Floresta GBDT no lugar da MLP para o modelo de páginas: `tools/gbdt.js`
+  (gradient boosting multi-saída, JS puro) + `tools/train-page-gbdt.js` com
+  o mesmo portão de qualidade (holdout ≥ 99.5%, arquétipos e casos-chave).
+  No duelo contra a MLP v3: MSE 0.00019 vs 0.00116, PRADO 1.00 vs 0.97,
+  TELEGRAM_DARK 0.00, 100% de acurácia. Despachante `DarlModel` em `nn.js`
+  abstrai floresta e MLP; a floresta fica em `weights-page.js` (80 árvores,
+  profundidade 3, T=0.3, determinística).
+- Coleta de dados reais opt-in: o content script registra host + 32 features
+  + decisão da IA em `chrome.storage.local.dataLog` (≤500 páginas, sem
+  querystring) e o popup exporta um JSON via `chrome.downloads`
+  ("Exportar dados de navegação"). Nada sai do navegador sem o clique.
+- Regressão visual no CI: `tools/dev/` traz um crawler Playwright (antes/depois
+  com a extensão carregada), métricas perceptuais em Node puro (PNG decodificado
+  com zlib: luminância, fração escura, desvio de luminância, deltaE76) e
+  fixtures determinísticas (`light`, `hybrid`, `dark`) com critérios de
+  aprovação. O job `visual` roda a cada push; o job `crawl-real` visita sites
+  reais semanalmente e publica o dataset como artefato.
+- `darl-features.js`: extração de features sai do `content.js` e vira módulo
+  compartilhado com o crawler — a ordem canônica agora vive num lugar só.
+- 10 testes novos do motor por elemento (mapeamento de fundo/texto/gradiente/
+  sombra/alpha, WCAG) e round-trip da floresta: 62 no total.
+
+### Alterado
+- `weights-page.js` agora é uma floresta GBDT gerada por
+  `tools/train-page-gbdt.js --write` (o MLP trainer antigo segue como
+  registro histórico do duelo). CI atualizado para reproduzir a floresta.
+- Permissão `downloads` adicionada (export do JSON de dados).
+- Dependências (Playwright) confinadas a `tools/dev/` — runtime da extensão
+  continua JS puro, sem build.
+
 ## [3.0.0] — modelo de páginas v3: 14 arquétipos + reanálise estável
 
 ### Corrigido
