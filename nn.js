@@ -2,13 +2,14 @@
 
 // Motores das mini redes neurais da Extensão Dark com IA.
 //
-// Rede da pagina (weights-page.js -> DARL_PAGE_WEIGHTS):
-//   MLP 32 -> 24 (tanh) -> 16 (tanh) -> 6 (sigmoid)
+// Modelo da pagina (weights-page.js -> DARL_PAGE_WEIGHTS):
+//   MLP 32 -> 32 -> 24 -> 6 OU floresta GBDT (kind: "gbdt"), conforme o
+//   treinador que gerou o arquivo; o despachante DarlModel abstrai os dois.
 //   Saidas: [inverter, brilho, contraste, sepia, dim, tint]
 // Rede de imagens (weights-images.js -> DARL_IMAGE_WEIGHTS):
 //   MLP 6 -> 12 (tanh) -> 1 (sigmoid): manter invertida ou restaurar.
 //
-// Formato de pesos (default e storage): { dims: number[], W: Mat[], b: Vec[] }
+// Formato de pesos MLP (default e storage): { dims: number[], W: Mat[], b: Vec[] }
 
 (function () {
   const sigmoid = (v) => 1 / (1 + Math.exp(-v));
@@ -108,6 +109,45 @@
   }
 
   globalThis.DarlNN = { makeNet, compatible, forward, train, serialize, calibrate };
+
+  // ------------------------------------------------------- despachante de modelo
+  // O weights-page.js pode ser uma MLP (kind ausente) ou uma floresta GBDT
+  // (kind: "gbdt", gerada por tools/train-page-gbdt.js). O runtime da extensao
+  // so enxerga DarlModel: forward devolve as 6 saidas e calibrate aplica a
+  // temperatura salva junto com os pesos.
+
+  function loadForest(w) {
+    const trees = w.trees.map((t) => ({ feat: t.f, thresh: t.t, left: t.l, right: t.r, leaf: t.v }));
+    const nOut = w.nOut;
+    const lr = w.lr;
+    const base = w.base;
+    return {
+      predict(x) {
+        const out = base.slice();
+        for (const tr of trees) {
+          let n = 0;
+          while (tr.left[n] !== -1) n = x[tr.feat[n]] <= tr.thresh[n] ? tr.left[n] : tr.right[n];
+          const leaf = tr.leaf[n];
+          for (let o = 0; o < nOut; o++) out[o] += lr * leaf[o];
+        }
+        return out.map((v) => Math.min(1, Math.max(0, v)));
+      },
+    };
+  }
+
+  function makeModel(weights) {
+    if (weights && weights.kind === "gbdt") {
+      return { kind: "gbdt", forest: loadForest(weights), temp: weights.temp || 1 };
+    }
+    return { kind: "mlp", net: makeNet(weights.dims, weights), temp: weights.temp || 1 };
+  }
+
+  function modelForward(model, x) {
+    if (model.kind === "gbdt") return { p: model.forest.predict(x) };
+    return { p: forward(model.net, x).p };
+  }
+
+  globalThis.DarlModel = { makeModel, forward: modelForward };
 
   // ------------------------------------------------- motor de matrizes (modo SVG)
   // Compoem a cadeia sepia x grayscale x contraste x brilho x invertNHue numa
