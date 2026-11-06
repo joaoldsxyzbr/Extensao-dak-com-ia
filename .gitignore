@@ -7,3 +7,9 @@ Desktop.ini
 .vscode/
 .idea/
 *.swp
+
+# Ferramentas de dev (tools/dev): dependencias e saidas do crawler
+tools/dev/node_modules/
+tools/dev/out/
+tools/dev/.playwright-*/
+
