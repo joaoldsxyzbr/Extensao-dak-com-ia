@@ -2,6 +2,33 @@
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
 
+## [4.1.0] — caso real Rocket.Chat: arquétipo CHAT_HYBRID a partir do dataLog
+
+### Corrigido
+- Chat híbrido com casca escura (caso real: `chat.pradoapp.com`, Rocket.Chat,
+  exportado pelo "Exportar dados de navegação" do popup). A página tem body
+  escuro e o conteúdo é um painel branco sobreposto: nas features por elemento
+  ela parece "site escuro" (94%+ dos elementos herdam o fundo escuro), então a
+  IA dizia "retoque escuro" com 95% de confiança e o centro do chat ficava
+  branco. Assinatura que separa esse caso de um site escuro de verdade: texto
+  de luminância média com contraste medido péssimo (`lowContrast` ~0.96) —
+  num tema escuro real o texto é claro e o contraste medido é bom.
+- Arquétipo `CHAT_HYBRID` (`tools/page-dataset.js`) calibrado no vetor REAL
+  exportado, rótulo inverter com o motor por elemento (a sidebar escura fica
+  escura, o painel branco escurece, o texto escuro clareia com guarda WCAG).
+  Gate novo no treinador: `ROCKET conf ≥ 0.75` (antes p(inverter)=0.06, agora
+  conf 1.00). Holdout segue 100% (MSE 0.00022), PRADO 1.00, TELEGRAM_DARK 0.00.
+- Teto do motor por elemento: 4000 → 8000 elementos. Chats SPA como o
+  Rocket.Chat passam de 4000 nós e cairiam no fallback de filtro global, que
+  clareia a sidebar escura.
+
+### Adicionado
+- Teste `CHAT_HYBRID` no `tools/test-nn.js` com o vetor real (63 testes).
+- Fixture `tools/dev/fixtures/hybrid-chat.html` + regra no crawler: reproduz
+  a assinatura real (fracWithBg ~0.06, fracDark ~0.97, lowContrast ~0.98) e o
+  job `visual` do CI guarda o caso para sempre — o painel central tem de
+  escurecer com a sidebar escura intacta.
+
 ## [4.0.0] — motor por elemento, GBDT e ciclo de dados reais
 
 ### Adicionado
