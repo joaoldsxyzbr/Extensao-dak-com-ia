@@ -89,6 +89,22 @@ function extractFeatures() {
   fallback[12] = 0.8; // fracLight
   fallback[15] = 0.85; // contrast
   fallback[22] = 0.5; // fontMean
+  // A extração precisa ler a página ORIGINAL: os estilos da própria extensão
+  // (tampa anti-flash escura no boot, fundo branco do modo inversão) não podem
+  // poluir as features na reanálise — eram a causa de decisoes diferentes entre
+  // primeira analise e Reanalisar. Desliga-os so durante a leitura e religa em
+  // seguida, no mesmo tick de execucao (nada e pintado no intervalo).
+  const extStyles = [];
+  try {
+    for (const s of document.querySelectorAll("style")) {
+      if ((s.id === STYLE_ID || s.id === COVER_ID) && !s.disabled) {
+        s.disabled = true;
+        extStyles.push(s);
+      }
+    }
+  } catch {
+    /* DOM imparsavel: extrai como estiver */
+  }
   try {
     const htmlLum = inferHtmlBgLum();
     const all = document.body ? document.body.querySelectorAll("*") : [];
@@ -179,6 +195,8 @@ function extractFeatures() {
     return f;
   } catch {
     return fallback;
+  } finally {
+    for (const s of extStyles) s.disabled = false;
   }
 }
 
