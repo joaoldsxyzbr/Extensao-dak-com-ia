@@ -1,4 +1,4 @@
-# Contribuindo com o Darl Dark
+# Contribuindo com a Extensão Dark com IA
 
 Projeto sem dependências: preciso apenas de Node.js (para treino/testes) e,
 opcionalmente, Python 3 (para regerar ícones). A extensão carrega via
