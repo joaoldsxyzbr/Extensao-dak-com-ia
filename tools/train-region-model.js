@@ -1,4 +1,4 @@
-// Treinador da rede de regioes (Darl Dark v3 - pipeline nnlab).
+// Treinador da rede de regioes (Extensão Dark com IA v3 - pipeline nnlab).
 // Executar: node tools/train-region-model.js
 // Gera ../weights-region.js (com temperatura calibrada).
 //
