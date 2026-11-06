@@ -156,6 +156,11 @@ button.ghost.small {
   padding-top: 8px;
 }
 
+.dump-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
 /* --- manual (removido: so a IA decide) / demais controles --- */
 
 .options {
