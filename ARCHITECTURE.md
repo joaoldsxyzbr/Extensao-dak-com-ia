@@ -1,4 +1,4 @@
-# Arquitetura — Darl Dark
+# Arquitetura — Extensão Dark com IA
 
 Este documento descreve como a extensão funciona por dentro. Para as regras de
 trabalho no repositório, veja [AGENTS.md](AGENTS.md).
