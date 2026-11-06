@@ -1,4 +1,4 @@
-// Treinador da rede de imagens (Darl Dark v3 - pipeline nnlab).
+// Treinador da rede de imagens (Extensão Dark com IA v3 - pipeline nnlab).
 // Executar: node tools/train-image-model.js
 // Gera ../weights-images.js (com temperatura calibrada).
 //
