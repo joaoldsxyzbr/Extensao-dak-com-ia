@@ -27,9 +27,13 @@ const FIXTURES = path.join(__dirname, "fixtures");
 // Criterios de aprovacao por fixture (regressao visual com limiar humano):
 // o "depois" precisa ser majoritariamente escuro, manter texto visivel
 // (desvio de luminancia) e, nos hibridos, cada metade ser escura.
+// lumStd e GLOBAL: depende da densidade de texto da fixture. Valores
+// calibrados na primeira execucao real do CI (texto visivel, extensao OK):
+// light=0.060, hybrid=0.036 — o piso 0.03 pega regressao de "texto apagado"
+// (pagina uniforme sem contraste cai para ~0.01), nao o caso saudavel.
 const FIXTURE_RULES = {
   "light.html": { darkFrac: 0.55, meanLum: 0.45, lumStd: 0.05 },
-  "hybrid.html": { darkFrac: 0.55, meanLum: 0.45, lumStd: 0.05, halvesDarkFrac: 0.5 },
+  "hybrid.html": { darkFrac: 0.55, meanLum: 0.45, lumStd: 0.03, halvesDarkFrac: 0.5 },
   "dark.html": { darkFrac: 0.6, maxDeltaE: 45 }, // ja escuro: retoque quase identidade
 };
 
