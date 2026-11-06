@@ -97,7 +97,9 @@ jobs:
   # Coleta semanal em sites reais: sem gate duro (internet e flutuante),
   # o objetivo e gerar tools/dev/out/report.json com features reais.
   crawl-real:
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    # Semanal + manual. Gatilho por tag: commit com [crawl] na mensagem
+    # dispara a coleta na hora (ex.: lista de sites atualizada).
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[crawl]'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
