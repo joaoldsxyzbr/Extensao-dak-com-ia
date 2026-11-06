@@ -6,12 +6,16 @@ inteiramente dentro da extensão, sem servidor nem bibliotecas.
 ## Como funciona
 
 ```
-página carrega → content.js extrai 32 features (histograma de luminância, frações
+página carrega (com tampa escura anti-flash desde o document_start)
+→ content.js extrai 32 features (histograma de luminância, frações
   escura/clara, contraste do texto, saturação vívida, fontes mono/título/pequenas,
   position fixed, marcadores semânticos: article nav table form mídia...)
 → rede de páginas (32 → 24 → 16 → 6) em nn.js
 → decisões: inverter / retoque escuro / não mexer + brilho, contraste, sépia, dim, tint
-→ CSS filter aplicado
+→ em páginas invertidas: rede de regiões (8 → 12 → 1) neutraliza a inversão em
+  blocos escuros grandes (header, footer, hero, card de código)
+→ rede de imagens (6 → 12 → 1) decide por imagem restaurar ou manter invertida
+→ conteúdo revelado já com o tema aplicado (boot cover com timeout de segurança)
 feedback no popup → backpropagation → pesos salvos → todas as abas se atualizam
 ```
 
@@ -41,12 +45,14 @@ feedback no popup → backpropagation → pesos salvos → todas as abas se atua
 |---|---|
 | `manifest.json` | Manifest V3; permissões mínimas (`storage`, `activeTab`) |
 | `content.js` | Features, decisão, aplicação do CSS, cache anti-flash |
-| `nn.js` | Motor MLP genérico: forward + backpropagation (ambas as redes) |
+| `nn.js` | Motor MLP genérico: forward + backpropagation (as três redes) |
 | `weights-page.js` | Pesos da rede de páginas v2 (gerado pelo treinador) |
 | `weights-images.js` | Pesos da rede de imagens |
+| `weights-region.js` | Pesos da rede de regiões (gerado pelo treinador) |
 | `popup.html/css/js` | Controles, análise e feedback (treino da rede) |
 | `background.js` | Atalho Alt+Shift+D e migração de schema no `onInstalled` |
 | `tools/train-page-model.js` | Treinador do modelo de páginas (regenera `weights-page.js`) |
+| `tools/train-region-model.js` | Treinador da rede de regiões (regenera `weights-region.js`) |
 | `tools/generate_icons.py` | Gera os ícones PNG (sem dependências) |
 | `tools/test-nn.js` | Testes das redes e do ciclo de feedback |
 
@@ -59,8 +65,9 @@ feedback no popup → backpropagation → pesos salvos → todas as abas se atua
 ## Testar os modelos
 
 ```
-node tools/test-nn.js        # valida as duas redes e o ciclo de feedback
+node tools/test-nn.js           # valida as três redes e o ciclo de feedback
 node tools/train-page-model.js  # retreina a rede de páginas e regera weights-page.js
+node tools/train-region-model.js # retreina a rede de regiões e regera weights-region.js
 ```
 
 Cobre inferência nos três regimes (clara/escura/mista), o ciclo de feedback
@@ -68,7 +75,9 @@ Cobre inferência nos três regimes (clara/escura/mista), o ciclo de feedback
 
 ## Limitações conhecidas
 
-- Modo filter global (igual ao "Filter mode" do Dark Reader): elementos com
-  `position: fixed` podem acompanhar o scroll.
-- Pode haver um breve flash claro no carregamento antes da primeira análise.
+- **Anti-flash**: o `document_start` instala uma tampa escura (`html.darl-boot`) e
+  o conteúdo só é revelado com o tema aplicado — com timeout de segurança de 450ms
+  e preferência pelo cache do host, então revisitas revelam quase instantaneamente.
+- Modo filter global: elementos com `position: fixed` ainda podem acompanhar o
+  scroll quando a região que os contém é neutralizada (efeito raro).
 - A validação visual em sites reais é manual; o resto é coberto por `tools/test-nn.js`.

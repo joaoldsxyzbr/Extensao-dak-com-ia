@@ -18,6 +18,7 @@ const DEFAULT_SETTINGS = {
 let settings = null;
 let weightsModel = null; // modelo da rede atualmente em uso
 let imageNet = null; // rede de imagens (pesos estaticos embarcados)
+let regionNet = null; // rede de regioes: blocos escuros em paginas invertidas
 let features = null; // cache das features desta frame
 let applied = null; // o que esta aplicado agora: { mode, invert, brightness, contrast, sepia, invertProb }
 let pipelineReady = false;
@@ -369,6 +370,12 @@ img.dd-keep {
   filter: none !important;
 }`;
     }
+    // Blocos escuros: a inversao da pagina e neutralizada e o bloco
+    // permanece com as cores originais (decisao da rede de regioes).
+    css += `
+.dd-region {
+  filter: invert(1) hue-rotate(180deg) !important;
+}`;
   }
   return css;
 }
@@ -381,6 +388,8 @@ function apply(decision) {
   if (!decision || decision.off) {
     if (style) style.remove();
     applied = decision ? { ...decision, css: false } : { off: true };
+    clearRegions();
+    reveal();
     return;
   }
 
@@ -393,6 +402,9 @@ function apply(decision) {
   const css = buildCSS(decision);
   if (el.textContent !== css) el.textContent = css; // evita mutacoes desnecessarias (loop com o observer)
   applied = { ...decision, css: true };
+  reveal();
+  if (decision.invert) maybeRegions();
+  else clearRegions();
 }
 
 function refresh() {
@@ -406,6 +418,164 @@ function refresh() {
     // Nunca deixar a analise quebrar a pagina de hospedagem.
     console.warn("Darl Dark: falha ao aplicar tema", err);
   }
+}
+
+// ---------------------------------------------------------------- boot cover (anti-flash)
+// Paginas claras pintariam branco antes da analise: a extensao abre com uma
+// tampa escura e revela o conteudo ja com o tema aplicado. Cache de host + tampa
+// tornam o flash invisivel; a tampa tem timeout de seguranca inexoravel.
+
+const BOOT_CLASS = "darl-boot";
+const COVER_ID = "darl-flash-cover";
+const COVER_MAX_MS = 450;
+let bootTimer = null;
+
+function installCover() {
+  if (document.readyState !== "loading") return; // injecao tardia: nao tampa o que ja apareceu
+  try {
+    const root = document.documentElement;
+    root.classList.add(BOOT_CLASS);
+    const el = document.createElement("style");
+    el.id = COVER_ID;
+    el.textContent = `
+html.darl-boot { background: #0e1019 !important; }
+html.darl-boot > * { visibility: hidden !important; }`;
+    root.appendChild(el);
+    bootTimer = setTimeout(reveal, COVER_MAX_MS);
+  } catch {
+    /* se a tampa falhar, a pagina simplesmente carrega como sem extensao */
+  }
+}
+
+function reveal() {
+  if (bootTimer) {
+    clearTimeout(bootTimer);
+    bootTimer = null;
+  }
+  document.documentElement.classList.remove(BOOT_CLASS);
+  const el = document.getElementById(COVER_ID);
+  if (el) el.remove();
+}
+
+
+// ---------------------------------------------------------------- regioes (rede 3)
+// Em paginas invertidas, blocos grandes com fundo escuro (headers, footers, heros,
+// cards de codigo) ficam com a cor original: a rede decide por regiao e a classe
+// .dd-region neutraliza a inversao do bloco. Resolve paginas mistas sem virar
+// o header claro-depois-de-invertido.
+
+const REGION_MIN_AREA = 0.015;
+const REGION_MAX = 24;
+const REGION_THROTTLE_MS = 3000;
+const REGION_CLASS = "dd-region";
+const MEDIA_TAGS = new Set(["IMG", "VIDEO", "PICTURE", "CANVAS", "IFRAME", "SVG", "OBJECT", "EMBED"]);
+let regionMarked = [];
+let lastRegionRun = 0;
+
+function clearRegions() {
+  for (const el of regionMarked) el.classList.remove(REGION_CLASS);
+  regionMarked = [];
+}
+
+function maybeRegions() {
+  const now = Date.now();
+  if (now - lastRegionRun < REGION_THROTTLE_MS) return;
+  lastRegionRun = now;
+  decideRegions();
+}
+
+function regionCandidates() {
+  const root = document.documentElement;
+  const vw = Math.max(root.clientWidth || 1, 1);
+  const vh = Math.max(root.clientHeight || 1, 1);
+  const pageArea = vw * vh;
+  const all = document.body ? document.body.querySelectorAll("*") : [];
+  const step = Math.max(1, Math.floor(all.length / 600));
+
+  const candidates = [];
+  for (let i = 0; i < all.length; i += step) {
+    const el = all[i];
+    if (MEDIA_TAGS.has(el.tagName)) continue;
+    const cs = getComputedStyle(el);
+    const bg = parseRGB(cs.backgroundColor);
+    if (!bg || bg.a <= 0.5) continue; // regiao precisa de fundo proprio opaco
+    const l = lum(bg.r, bg.g, bg.b);
+    if (l > 0.5) continue; // so blocos escurecidos importam em pagina invertida
+    const rect = el.getBoundingClientRect();
+    if (!rect.width || !rect.height) continue;
+    const areaFrac = (rect.width * rect.height) / pageArea;
+    if (areaFrac < REGION_MIN_AREA) continue;
+    candidates.push({ el, cs, bg, l, areaFrac });
+  }
+
+  // maiores primeiro; descendentes de candidatos escolhidos sao ignorados
+  candidates.sort((a, b) => b.areaFrac - a.areaFrac);
+  const chosen = [];
+  for (const c of candidates) {
+    if (chosen.length >= REGION_MAX) break;
+    if (chosen.some((o) => o.el.contains(c.el))) continue;
+    chosen.push(c);
+  }
+  return chosen;
+}
+
+// Features da regiao (ordem identica a tools/train-region-model.js):
+// [lum, sat, textLum, contrast, areaFrac, isFixed, hasBgImg, childMediaFrac]
+function regionFeatures(c) {
+  let textLumSum = 0, textCount = 0, contrastSum = 0;
+  let mediaCount = 0, childSampled = 0;
+  const walk = c.el.querySelectorAll("*");
+  const step = Math.max(1, Math.floor(walk.length / 40));
+  for (let i = 0; i < walk.length; i += step) {
+    const child = walk[i];
+    childSampled++;
+    const cs = getComputedStyle(child);
+    const fg = parseRGB(cs.color);
+    if (fg && child.childNodes.length && hasText(child)) {
+      const tl = lum(fg.r, fg.g, fg.b);
+      textLumSum += tl;
+      contrastSum += Math.log(1 + contrastRatio(tl, c.l)) / Math.log(22);
+      textCount++;
+    }
+    if (MEDIA_TAGS.has(child.tagName)) mediaCount++;
+  }
+  const mx = Math.max(c.bg.r, c.bg.g, c.bg.b);
+  const mn = Math.min(c.bg.r, c.bg.g, c.bg.b);
+  return [
+    clamp01(c.l),
+    clamp01(mx === 0 ? 0 : (mx - mn) / mx),
+    textCount ? clamp01(textLumSum / textCount) : 0.8,
+    textCount ? clamp01(contrastSum / textCount) : 0.7,
+    clamp01(c.areaFrac),
+    c.cs.position === "fixed" || c.cs.position === "sticky" ? 1 : 0,
+    c.cs.backgroundImage && c.cs.backgroundImage !== "none" ? 1 : 0,
+    childSampled ? clamp01(mediaCount / childSampled) : 0,
+  ];
+}
+
+function decideRegions() {
+  if (!regionNet || !settings || !settings.enabled) {
+    clearRegions();
+    return;
+  }
+  let marked = [];
+  try {
+    for (const c of regionCandidates()) {
+      try {
+        const { p } = DarlNN.forward(regionNet, regionFeatures(c));
+        if (p[0] > 0.5) marked.push(c.el);
+      } catch {
+        /* candidato com estilo imparsavel: segue a pagina */
+      }
+    }
+  } catch {
+    marked = [];
+  }
+  for (const el of regionMarked) {
+    if (!marked.includes(el)) el.classList.remove(REGION_CLASS);
+  }
+  for (const el of marked) el.classList.add(REGION_CLASS);
+  regionMarked = marked;
 }
 
 // ---------------------------------------------------------------- estado
@@ -450,6 +620,9 @@ function loadState() {
       weightsModel = DarlNN.makeNet(w.dims, w);
       if (!imageNet && globalThis.DARL_IMAGE_WEIGHTS) {
         imageNet = DarlNN.makeNet(globalThis.DARL_IMAGE_WEIGHTS.dims, globalThis.DARL_IMAGE_WEIGHTS);
+      }
+      if (!regionNet && globalThis.DARL_REGION_WEIGHTS) {
+        regionNet = DarlNN.makeNet(globalThis.DARL_REGION_WEIGHTS.dims, globalThis.DARL_REGION_WEIGHTS);
       }
       pipelineReady = true;
 
@@ -510,6 +683,7 @@ function watchMutations() {
 }
 
 function start() {
+  installCover();
   const onReady = () => {
     extractAndRefresh();
     watchMutations();

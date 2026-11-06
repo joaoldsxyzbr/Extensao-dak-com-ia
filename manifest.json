@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Darl Dark",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Modo escuro dirigido por mini redes neurais: a IA lê cada página e decide tudo.",
   "permissions": ["storage", "activeTab"],
   "action": {
@@ -23,7 +23,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["weights-page.js", "weights-images.js", "nn.js", "content.js"],
+      "js": ["weights-page.js", "weights-images.js", "weights-region.js", "nn.js", "content.js"],
       "run_at": "document_start",
       "all_frames": true
     }

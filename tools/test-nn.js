@@ -9,10 +9,11 @@ const root = path.join(__dirname, "..");
 const src =
   fs.readFileSync(path.join(root, "weights-page.js"), "utf8") + "\n" +
   fs.readFileSync(path.join(root, "weights-images.js"), "utf8") + "\n" +
+  fs.readFileSync(path.join(root, "weights-region.js"), "utf8") + "\n" +
   fs.readFileSync(path.join(root, "nn.js"), "utf8");
 (0, eval)(src); // escopo global, igual ao carregamento dos scripts na extensao
 
-const { DarlNN, DARL_PAGE_WEIGHTS, DARL_IMAGE_WEIGHTS } = globalThis;
+const { DarlNN, DARL_PAGE_WEIGHTS, DARL_IMAGE_WEIGHTS, DARL_REGION_WEIGHTS } = globalThis;
 
 let failures = 0;
 function expect(cond, name, detail) {
@@ -142,6 +143,24 @@ expect(imgDecide([0.45, 0.55, 0.18, 0.6, 0.2, 0.2]) === false,
   "imagem: logo colorido transparente -> restaurar");
 expect(imgDecide([0.3, 0.2, 0.1, 0.2, 0.6, 0.05]) === true,
   "imagem: icone escuro com pouca transparencia -> manter invertida");
+
+// ------------------------------------------------- rede de regioes
+// Entradas: [lum, sat, textLum, contrast, areaFrac, isFixed, hasBgImg, childMediaFrac]
+const regionNet = DarlNN.makeNet(DARL_REGION_WEIGHTS.dims, DARL_REGION_WEIGHTS);
+const regionKeep = (f) => DarlNN.forward(regionNet, f).p[0] > 0.5;
+
+expect(regionKeep([0.10, 0.3, 0.85, 0.8, 0.12, 1, 0, 0.05]) === true,
+  "regiao: header escuro fixo -> manter original");
+expect(regionKeep([0.08, 0.2, 0.8, 0.75, 0.08, 0, 0, 0.03]) === true,
+  "regiao: footer escuro -> manter original");
+expect(regionKeep([0.25, 0.35, 0.9, 0.7, 0.45, 0, 1, 0.05]) === true,
+  "regiao: hero escuro com imagem -> manter original");
+expect(regionKeep([0.12, 0.25, 0.85, 0.8, 0.05, 0, 0, 0.02]) === true,
+  "regiao: card de codigo escuro -> manter original");
+expect(regionKeep([0.85, 0.1, 0.12, 0.85, 0.5, 0, 0, 0.05]) === false,
+  "regiao: bloco claro de conteudo -> seguir inversao da pagina");
+expect(regionKeep([0.4, 0.5, 0.5, 0.5, 0.2, 0, 0, 0.1]) === false,
+  "regiao: cinza intermediario indeciso segue a pagina (conservador)");
 
 // ------------------------------------------------- infra
 const ser = DarlNN.serialize(pageNet);
