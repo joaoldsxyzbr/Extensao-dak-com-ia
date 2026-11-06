@@ -2,6 +2,34 @@
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
 
+## [4.2.0] — guarda de interação: hover/foco em tempo real
+
+### Corrigido
+- Hover/foco clareando a página (caso real: `chat.pradoapp.com` — "quando passa
+  o mouse fica branco, não dá de ler"). A varredura estática do motor por
+  elemento lê o estilo computado **em repouso**; regras de interação
+  (`:hover`, `:focus`, `:active`), overlays em pseudo-elementos
+  (`::before`/`::after`) e cores via `var()` só existem no instante da
+  interação. Elemento transparente em repouso não recebia regra nenhuma, então
+  o "hover branco" do tema claro original aplicava por cima — com o texto já
+  claro, virava faixa ilegível.
+- Nova **guarda de interação** no `element.js`: listeners delegados de
+  `mouseover`/`focusin` (capture, passive) no documento; quando o elemento sob
+  o ponteiro (e até 4 ancestrais) ESTÁ claro naquele instante — fundo,
+  gradiente ou pseudo-elemento — o remapeamento escuro é congelado numa regra
+  permanente do elemento (`[darl-guard="N"]`). Como lê o valor computado já
+  resolvido, cobre também cores via `var()` e estilos inline trocados por JS.
+  Texto escuro trazido pela interação clareia com a mesma guarda WCAG AA.
+
+### Adicionado
+- Testes da guarda (função pura `guardDecls`): hover claro gera fundo escuro +
+  texto claro, hover já escuro não gera regra, gradiente claro de hover escurece
+  (67 testes).
+- Probe de hover no crawler: `hoverProbe`/`hoverMaxLum` nas `FIXTURE_RULES` —
+  o job `visual` passa o mouse de verdade, tira screenshot só do elemento e
+  falha se a linha ficar clara. Fixture `hybrid-chat.html` ganhou o
+  `:hover` branco típico de tema claro para exercitar a guarda.
+
 ## [4.1.0] — caso real Rocket.Chat: arquétipo CHAT_HYBRID a partir do dataLog
 
 ### Corrigido
