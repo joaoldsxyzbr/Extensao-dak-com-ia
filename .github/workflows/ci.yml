@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # semanal, segunda 06:00 UTC: crawler em sites reais
+  workflow_dispatch:
 
 jobs:
   test:
@@ -15,14 +18,74 @@ jobs:
           node-version: 20
 
       - name: Sintaxe de todos os JS
-        run: find . -name "*.js" -exec node --check {} \;
+        run: find . -name "*.js" -not -path "./tools/dev/node_modules/*" -exec node --check {} \;
 
-      - name: Suite de regressao das redes
+      - name: Suite de regressao das redes e do motor por elemento
         run: node tools/test-nn.js
+
+      - name: Duelo GBDT x MLP (o commitado precisa continuar elegivel)
+        run: node tools/train-page-gbdt.js
 
       - name: Treinadores reproduzem os pesos commitados
         run: |
-          node tools/train-page-model.js
+          node tools/train-page-gbdt.js --write
           node tools/train-region-model.js
           node tools/train-image-model.js
           git diff --exit-code -- weights-page.js weights-region.js weights-images.js
+
+  # Regressao visual deterministica: fixtures locais (sem rede externa),
+  # screenshots antes/depois com a extensao carregada e metricas perceptuais.
+  visual:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar ferramentas de dev (Playwright)
+        working-directory: tools/dev
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Crawler nas fixtures (gate)
+        working-directory: tools/dev
+        run: node crawl.js --fixtures
+
+      - name: Publicar screenshots e relatorio
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regressao-visual
+          path: tools/dev/out/
+          retention-days: 14
+
+  # Coleta semanal em sites reais: sem gate duro (internet e flutuante),
+  # o objetivo e gerar tools/dev/out/report.json com features reais.
+  crawl-real:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar ferramentas de dev (Playwright)
+        working-directory: tools/dev
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Crawler nos sites reais
+        working-directory: tools/dev
+        run: node crawl.js --sites sites.txt
+
+      - name: Publicar dataset da semana
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dataset-sites-reais
+          path: tools/dev/out/
+          retention-days: 90
