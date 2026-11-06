@@ -99,6 +99,30 @@ const msgTemp = DARL_PAGE_WEIGHTS.temp || 1;
 const msgConf = DarlNN.calibrate(d.p[0], msgTemp);
 expect(msgConf >= 0.75, "MESSAGING -> confianca alta na decisao (antes ~56%)",
   `conf=${msgConf.toFixed(2)}`);
+
+// variante pesada do hibrido de mensagens (sidebar maior: ~40% de elementos escuros)
+const PRADO = vec({ htmlBg: 0.9, meanBg: 0.55, h0: 0.28, h1: 0.1, h6: 0.12, h7: 0.32,
+  fracWithBg: 0.55, fracDark: 0.4, fracLight: 0.35, textLum: 0.45, lowContrast: 0.12,
+  contrast: 0.62, satMean: 0.28, satHigh: 0.2, colorful: 0.28, imgFrac: 0.05, mono: 0.02,
+  fontMean: 0.45, smallUi: 0.3, fixedFrac: 0.15, navN: 0.5, formN: 0.35, mediaN: 0.2, metaDark: 0 });
+d = decidePage(PRADO);
+const pradoConf = DarlNN.calibrate(d.p[0], DARL_PAGE_WEIGHTS.temp || 1);
+expect(d.invert === true && pradoConf >= 0.75,
+  "PRADO -> hibrido de mensagens pesado inverte com confianca alta (antes ~67%)",
+  `conf=${pradoConf.toFixed(2)}`);
+
+// tema escuro nativo bem desenhado (Telegram/Discord dark): retoque quase identidade
+const TG = vec({ htmlBg: 0.05, meanBg: 0.09, h0: 0.5, h1: 0.3, fracWithBg: 0.5, fracDark: 0.75,
+  textLum: 0.85, lowContrast: 0.04, contrast: 0.82, satMean: 0.3, satHigh: 0.25, colorful: 0.25,
+  imgFrac: 0.06, mono: 0.02, fontMean: 0.45, smallUi: 0.32, fixedFrac: 0.12, navN: 0.5,
+  formN: 0.35, mediaN: 0.2, metaDark: 1 });
+d = decidePage(TG);
+const tgProb = DarlNN.calibrate(d.p[0], DARL_PAGE_WEIGHTS.temp || 1);
+expect(d.invert === false && tgProb <= 0.25,
+  "TELEGRAM_DARK -> retoque sem inversao, certeza alta (antes ~47% na fronteira)",
+  `p(inverter)=${tgProb.toFixed(2)}`);
+expect(d.brightness >= 0.9, "TELEGRAM_DARK -> retoque suave (tema ja bem desenhado)",
+  `brilho=${d.brightness.toFixed(2)}`);
 // novos centros da v2.3.0 (treino denso, 14 arquétipos)
 const SHOP = vec({ htmlBg: 0.96, meanBg: 0.88, h7: 0.68, fracWithBg: 0.45, fracLight: 0.72,
   textLum: 0.15, contrast: 0.8, satMean: 0.35, satHigh: 0.28, colorful: 0.38,
