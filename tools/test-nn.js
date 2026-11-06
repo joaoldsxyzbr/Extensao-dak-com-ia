@@ -311,6 +311,19 @@ const ghGrad = DE.guardDecls(null, "linear-gradient(rgb(255, 255, 255), rgb(240,
 expect(ghGrad.length === 1 && ghGrad[0].startsWith("background-image:"),
   "guarda: gradiente de hover claro vira escuro", ghGrad[0].slice(0, 60));
 
+// ----------------------------------- rotulagem de dados reais (v4.3)
+// O crawler coleta paginas reais; o rotulo vem da aparencia original
+// (auto-labeling perceptual). Sem confianca, o registro fica de fora.
+const LR = require("./load-real-data.js");
+expect(LR.labelEntry({ antes: { meanLum: 0.9, darkFrac: 0.05, lumStd: 0.08 }, features: new Array(32).fill(0.1) }).label === "light",
+  "dados reais: pagina clara rotulada inverter");
+expect(LR.labelEntry({ antes: { meanLum: 0.12, darkFrac: 0.85, lumStd: 0.05 }, features: new Array(32).fill(0.1) }).label === "dark",
+  "dados reais: pagina escura rotulada retoque");
+expect(LR.labelEntry({ antes: { meanLum: 1.0, darkFrac: 0, lumStd: 0.005 }, features: new Array(32).fill(0) }) === null,
+  "dados reais: pagina em branco/erro descartada");
+expect(LR.labelEntry({ antes: { meanLum: 0.5, darkFrac: 0.4, lumStd: 0.06 }, features: new Array(32).fill(0.1) }) === null,
+  "dados reais: hibrido ambiguo descartado (sem rotulo confiavel)");
+
 // ------------------------------------------------- infra
 const dimsRef = [32, 32, 24, 6];
 const refNet = DarlNN.makeNet(dimsRef);
