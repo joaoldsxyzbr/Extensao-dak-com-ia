@@ -115,7 +115,12 @@ throttled de 1.5s para SPAs). Fotos e vídeos ficam intactos por construção �
 não existe inversão global para reverter. `color-scheme: dark` no `<html>` escurece
 controles nativos e barras de rolagem. Acima do teto ou em erro: fallback
 automático para o modo filtro. É o motor que resolve páginas híbridas (sidebar
-escura + chat claro) sem rede de regiões.
+escura + chat claro) sem rede de regiões. Estados de interação (`:hover`,
+`:focus`) e pseudo-elementos não existem no estilo computado em repouso: a
+**guarda de interação** (v4.2) observa `mouseover`/`focusin` no documento e,
+se o elemento sob o ponteiro estiver claro naquele instante, congela o
+remapeamento escuro numa regra permanente (`[darl-guard="N"]`) — cobre cores
+via `var()` e estilos inline trocados por JS, pois lê o valor já resolvido.
 
 **Modo CSS clássico** (padrão): `filter: invert(1) hue-rotate(180deg) brightness()
 contrast() sepia() grayscale()` no `<html>`, com fundo opaco branco (transparente
