@@ -52,12 +52,19 @@ async function shoot(context, url, name, tag) {
   await page.waitForTimeout(1800); // varredura por elemento + rede de imagens
   const shot = path.join(OUT_DIR, `${name}.${tag}.png`);
   await page.screenshot({ path: shot, fullPage: false });
+  // a extensao aplicou estilos nesta pagina? (diagnostico: no headless-shell
+  // do Playwright as extensoes nao carregam e o gate falha sem explicacao)
+  const extApplied = await page.evaluate(() => Boolean(
+    document.getElementById("darl-dark-style") ||
+    document.getElementById("darl-element-style") ||
+    document.getElementById("darl-flash-cover")
+  )).catch(() => false);
   // features reais da pagina, com a MESMA ordem canonica da extensaoo
   // (ignora os <style> da propria extensao, como o content.js faz)
   const featuresSrc = fs.readFileSync(path.join(ROOT, "darl-features.js"), "utf8");
   const features = await page.evaluate(`${featuresSrc}\n(globalThis.DarlFeatures && DarlFeatures.extract({ skipStyleIds: ["darl-dark-style", "darl-flash-cover", "darl-element-style"] }))`).catch(() => null);
   await page.close();
-  return { shot, features };
+  return { shot, features, extApplied };
 }
 
 async function main() {
@@ -80,8 +87,11 @@ async function main() {
   console.log(`Crawler: ${targets.length} alvo(s)${useFixtures ? " (fixtures, gate de regressao)" : " (sites reais, coleta)"}`);
 
   // Contexto 1: navegador limpo, sem extensao (o "antes" original).
+  // channel: "chromium" usa o Chromium completo (headless novo), nao o
+  // headless-shell — so o Chromium completo carrega extensoes em headless.
   const beforeCtx = await chromium.launch({
     headless: true,
+    channel: "chromium",
     viewport: { width: 1280, height: 800 },
   });
   // Contexto 2: mesma versao do Chromium com a extensao carregada
@@ -90,6 +100,7 @@ async function main() {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "darl-crawl-"));
   const afterCtx = await chromium.launchPersistentContext(profile, {
     headless: true,
+    channel: "chromium",
     viewport: { width: 1280, height: 800 },
     args: [
       `--disable-extensions-except=${ROOT}`,
@@ -113,8 +124,10 @@ async function main() {
         depois: { meanLum: +B.stats.meanLum.toFixed(3), darkFrac: +B.stats.darkFrac.toFixed(3), lumStd: +B.stats.lumStd.toFixed(3) },
         deltaE76: +de.toFixed(1),
         features: after.features,
+        extApplied: after.extApplied,
         approved: null,
       };
+      if (!after.extApplied) console.warn(`  AVISO ${t.name}: a extensao nao aplicou estilos nesta pagina (nao carregou?)`);
 
       if (t.rule) {
         const r = t.rule;
