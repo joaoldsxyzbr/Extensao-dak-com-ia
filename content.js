@@ -327,7 +327,8 @@ function computeDecision() {
 
   const { p } = DarlNN.forward(weightsModel, features);
   const invert = p[0] > 0.5;
-  const invertProb = Math.round(p[0] * 100) / 100;
+  // Confianca calibrada por temperatura: a porcentagem do popup e honesta.
+  const invertProb = Math.round(DarlNN.calibrate(p[0], PAGE_TEMP) * 100) / 100;
   const sepia = 0.5 * p[3];
   // Piso leve de dessaturacao: reduz halation (branco puro cansa em fundo escuro).
   const tint = Math.max(0.03, 0.25 * p[5]);
@@ -711,18 +712,17 @@ function cacheDecision(decision) {
   });
 }
 
+// Modelos estaticos embutidos: a extensao e inference-only. Treino acontece
+// offline, pelos treinadores em tools/ (pipeline nnlab), e chega aqui embutido.
+const PAGE_TEMP = globalThis.DARL_PAGE_WEIGHTS && globalThis.DARL_PAGE_WEIGHTS.temp ? globalThis.DARL_PAGE_WEIGHTS.temp : 1;
+
 function loadState() {
   chrome.storage.sync.get(DEFAULT_SETTINGS, (sync) => {
     if (chrome.runtime.lastError) return;
     settings = { ...DEFAULT_SETTINGS, ...sync };
-    chrome.storage.local.get(["nnWeights", "hostCache"], (local) => {
+    chrome.storage.local.get("hostCache", (local) => {
       if (chrome.runtime.lastError) return;
-      // Pesos treinados pelo feedback do usuario, se forem compativeis com o
-      // modelo desta versao; senao usa os pesos padrao embutidos.
-      const stored = local && local.nnWeights ? local.nnWeights.w : null;
-      const defaultW = globalThis.DARL_PAGE_WEIGHTS;
-      const w = DarlNN.compatible(stored, defaultW.dims) ? stored : defaultW;
-      weightsModel = DarlNN.makeNet(w.dims, w);
+      weightsModel = DarlNN.makeNet(globalThis.DARL_PAGE_WEIGHTS.dims, globalThis.DARL_PAGE_WEIGHTS);
       if (!imageNet && globalThis.DARL_IMAGE_WEIGHTS) {
         imageNet = DarlNN.makeNet(globalThis.DARL_IMAGE_WEIGHTS.dims, globalThis.DARL_IMAGE_WEIGHTS);
       }

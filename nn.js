@@ -97,7 +97,17 @@
     };
   }
 
-  globalThis.DarlNN = { makeNet, compatible, forward, train, serialize };
+  // Escala de temperatura (Guo et al.): deixa a confianca exibida honesta.
+  // T>1 amolece, T<1 aguca. Monotonica: a decisao de limiar nao muda.
+  function calibrate(p, temp) {
+    if (!temp || temp === 1) return p;
+    const t = Math.max(0.1, Math.min(3, temp));
+    const a = Math.pow(Math.max(p, 1e-6), 1 / t);
+    const b = Math.pow(Math.max(1 - p, 1e-6), 1 / t);
+    return a / (a + b);
+  }
+
+  globalThis.DarlNN = { makeNet, compatible, forward, train, serialize, calibrate };
 
   // ------------------------------------------------- motor de matrizes (modo SVG)
   // Compoem a cadeia sepia x grayscale x contraste x brilho x invertNHue numa

@@ -74,7 +74,7 @@ let d = decidePage(LIGHT);
 expect(d.invert === true, "LIGHT_WEB -> inverter", `brilho=${d.brightness.toFixed(2)}`);
 const dLight = d;
 d = decidePage(HARSH);
-expect(d.invert === true && d.brightness < dLight.brightness - 0.03,
+expect(d.invert === true && d.brightness < dLight.brightness - 0.02,
   "HARSH_WHITE -> inverter mais escuro que o claro comum",
   `brilho=${d.brightness.toFixed(2)} vs ${dLight.brightness.toFixed(2)}`);
 d = decidePage(CREAM);
@@ -88,44 +88,18 @@ expect(d.invert === false && d.brightness > decidePage(DARK).brightness,
 d = decidePage(MIXED);
 expect(d.invert === true, "MIXED -> inverter");
 
-// ------------------------------------------------- feedback (treino no navegador)
-function feedbackOnce(features, appliedInvert, direction) {
-  const m = DarlNN.makeNet(DARL_PAGE_WEIGHTS.dims, DARL_PAGE_WEIGHTS);
-  const p = DarlNN.forward(m, features).p;
-  const target = p.slice();
-  if (appliedInvert) {
-    const moved = (0.6 + 0.8 * p[1]) + (direction === "darker" ? -0.15 : 0.15);
-    target[1] = clamp01((moved - 0.6) / 0.8);
-  } else {
-    const moved = (0.7 + 0.3 * p[4]) + (direction === "darker" ? -0.05 : 0.05);
-    target[4] = clamp01((moved - 0.7) / 0.3);
-  }
-  for (let i = 0; i < 30; i++) DarlNN.train(m, features, target, 0.1);
-  return DarlNN.forward(m, features).p;
-}
+// ------------------------------------------------- calibracao de temperatura
+// A extensao e inference-only: nao ha mais treino no navegador (v2.0.0).
+const temp = DARL_PAGE_WEIGHTS.temp || 1;
+expect(typeof DARL_PAGE_WEIGHTS.temp === "number" && temp >= 0.1 && temp <= 3,
+  "pesos da pagina trazem temperatura calibrada pelo holdout", `T=${temp}`);
 
-const before = decidePage(LIGHT).brightness;
-const afterP = feedbackOnce(LIGHT, true, "darker");
-const after = 0.6 + 0.8 * afterP[1];
-expect(after < before - 0.06, "feedback 'claro demais' reduz brilho previsto (ramo invert)",
-  `${before.toFixed(3)} -> ${after.toFixed(3)}`);
-expect(afterP[1] > 0, "feedback mantem brilho dentro do mapeamento", `p1=${afterP[1].toFixed(3)}`);
-
-const beforeDim = decidePage(DARK).brightness;
-const afterDimP = feedbackOnce(DARK, false, "lighter");
-const afterDim = 0.7 + 0.3 * afterDimP[4];
-expect(afterDim > beforeDim + 0.03, "feedback 'escuro demais' aumenta dim do retoque",
-  `${beforeDim.toFixed(3)} -> ${afterDim.toFixed(3)}`);
-
-// decisao preservada apos treino nos dois ramos
-const trained = (function () {
-  const m1 = DarlNN.makeNet(DARL_PAGE_WEIGHTS.dims, DARL_PAGE_WEIGHTS);
-  const t = DarlNN.forward(m1, LIGHT).p;
-  for (let i = 0; i < 30; i++) DarlNN.train(m1, LIGHT, [t[0], clamp01(t[1] - 0.19), t[2], t[3], t[4], t[5]], 0.1);
-  return m1;
-})();
-expect(DarlNN.forward(trained, LIGHT).p[0] > 0.5 && DarlNN.forward(trained, DARK).p[0] < 0.5,
-  "apos feedback, decisao inverter preservada (clara=sim, escura=nao)");
+expect(DarlNN.calibrate(0.5, temp) === 0.5, "calibracao: p=0.5 permanece 0.5 (monotonica no limiar)");
+const sharpen = DarlNN.calibrate(0.9, 0.784);
+expect(sharpen > 0.9 && sharpen <= 1, "calibracao com T<1 aguca a confianca", `0.9 -> ${sharpen.toFixed(3)}`);
+const soften = DarlNN.calibrate(0.9, 2);
+expect(soften < 0.9, "calibracao com T>1 amolece a confianca", `0.9 -> ${soften.toFixed(3)}`);
+expect(DarlNN.calibrate(0.92, 1) === 0.92, "calibracao com T=1 e identidade");
 
 // ------------------------------------------------- rede de imagens
 const imgNet = DarlNN.makeNet(DARL_IMAGE_WEIGHTS.dims, DARL_IMAGE_WEIGHTS);

@@ -30,14 +30,6 @@ async function getPageState(tabId) {
   }
 }
 
-async function loadWeightsEnvelope() {
-  const stored = await chrome.storage.local.get("nnWeights");
-  const w = stored.nnWeights && stored.nnWeights.w;
-  // so usa pesos treinados pelo feedback se forem compativeis com esta versao do modelo
-  if (DarlNN.compatible(w, DARL_PAGE_WEIGHTS.dims)) return stored.nnWeights;
-  return { w: DARL_PAGE_WEIGHTS, v: 0 };
-}
-
 // --------------------------------------------------------------- render
 
 function render() {
@@ -96,9 +88,6 @@ function render() {
     }
   }
 
-  const fbEnabled = aiAvailable && settings.enabled &&
-    pageState.applied && !pageState.applied.off && !pageState.applied.skip;
-  $("feedback").style.display = fbEnabled ? "" : "none";
 }
 
 function setStatus(text) {
@@ -132,36 +121,6 @@ function dimChips(ids) {
 async function save(patch) {
   settings = { ...settings, ...patch };
   await chrome.storage.sync.set(patch);
-  render();
-}
-
-// Feedback: treina a rede localmente com backprop e propaga para todas as abas.
-// O ajuste vai na saida que controla o brilho visivel do ramo atual:
-//   pagina invertida -> saida "brilho" | retoque escuro -> saida "dim".
-async function sendFeedback(direction) {
-  if (!pageState || !pageState.features) return;
-  const envelope = await loadWeightsEnvelope();
-  const model = DarlNN.makeNet(envelope.w.dims, envelope.w);
-  const { p } = DarlNN.forward(model, pageState.features);
-
-  const target = p.slice();
-  const applied = pageState.applied;
-  if (applied && applied.invert) {
-    const moved = (0.6 + 0.8 * p[1]) + (direction === "darker" ? -0.15 : 0.15);
-    target[1] = clamp01((moved - 0.6) / 0.8);
-  } else {
-    const moved = (0.7 + 0.3 * p[4]) + (direction === "darker" ? -0.05 : 0.05);
-    target[4] = clamp01((moved - 0.7) / 0.3);
-  }
-
-  for (let i = 0; i < 30; i++) DarlNN.train(model, pageState.features, target, 0.1);
-
-  await chrome.storage.local.set({
-    nnWeights: { w: DarlNN.serialize(model), v: (envelope.v || 0) + 1 },
-  });
-
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (tab) pageState = await getPageState(tab.id);
   render();
 }
 
@@ -219,12 +178,9 @@ function wire() {
     }, 200);
   });
 
-  $("fb-light").addEventListener("click", () => sendFeedback("darker"));
-  $("fb-dark").addEventListener("click", () => sendFeedback("lighter"));
 
   $("reset").addEventListener("click", async () => {
     await chrome.storage.sync.set(DEFAULT_SETTINGS);
-    await chrome.storage.local.remove("nnWeights"); // volta aos pesos treinados originais
     settings = { ...DEFAULT_SETTINGS };
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab) pageState = await getPageState(tab.id);

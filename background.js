@@ -25,6 +25,9 @@ chrome.runtime.onInstalled.addListener(async () => {
       for (const k of missing) patch[k] = DEFAULTS[k];
       await chrome.storage.sync.set(patch);
     }
+    // v1-v1.6 treinavam pesos dentro do navegador (nnWeights); a v2 e
+    // inference-only: remove pesos treinados obsoletos.
+    await chrome.storage.local.remove("nnWeights");
   } catch {
     // instalacao com storage indisponivel: defaults serao usados em memoria
   }

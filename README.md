@@ -16,7 +16,8 @@ página carrega (com tampa escura anti-flash desde o document_start)
   blocos escuros grandes (header, footer, hero, card de código)
 → rede de imagens (6 → 12 → 1) decide por imagem restaurar ou manter invertida
 → conteúdo revelado já com o tema aplicado (boot cover com timeout de segurança)
-feedback no popup → backpropagation → pesos salvos → todas as abas se atualizam
+treino offline (tools/train-*.js, pipeline nnlab: Adam, cosine LR, weight decay,
+  holdout, early stopping, calibração de temperatura) → pesos embutidos na extensão
 ```
 
 - Sites claros: a rede inverte as cores (imagens e vídeos voltam ao original).
@@ -26,14 +27,16 @@ feedback no popup → backpropagation → pesos salvos → todas as abas se atua
   Imagens opacas voltam ao original mesmo quando muito escuras.
 - Sites já escuros: por padrão a extensão aplica um retoque de uniformização
   (`forceTheme: true`), em vez de respeitar o tema do site sem fazer nada.
-- O feedback do usuário ("ficou claro demais" / "escuro demais") realiza 30 passos
-  de gradiente sobre os pesos e propaga a mudança para todas as abas abertas.
+- Treino 100% offline: a extensão é inference-only. Os pesos das três redes são
+  gerados pelos treinadores (validados em holdout, com temperatura calibrada),
+  embarcados em `weights-*.js` e apenas executados no navegador.
 - O modelo v2 entende seis arquétipos de página e saídas contínuas: site claro comum,
   página branca dura (docs), notícias creme, site já escuro, dashboard escuro
   saturado e páginas mistas — com dim e tint calibrados por arquétipo.
-- Só a IA decide: não existe ajuste manual por site — a rede (e o seu feedback
-  treinando-a) define tudo. Há apenas chaves globais (forçar tema, análise de
-  imagens, restaurar mídias) e o interruptor geral.
+- Só a IA decide: não existe ajuste manual por site. Há apenas chaves globais
+  (forçar tema, análise de imagens, restaurar mídias, modo SVG) e o interruptor
+  geral. A "confiança 98%" do popup é calibrada por temperatura (Guo et al. 2017)
+  minimizada no holdout — a porcentagem significa o que diz.
 - `chrome.storage.local.hostCache` memoriza a última decisão por host: nas revisitas,
   o tema é aplicado na hora (anti-flash) e a rede refina depois.
 - SPAs (YouTube, Reddit): `MutationObserver` com throttle reanalisa a página quando
@@ -49,12 +52,14 @@ feedback no popup → backpropagation → pesos salvos → todas as abas se atua
 | `weights-page.js` | Pesos da rede de páginas v2 (gerado pelo treinador) |
 | `weights-images.js` | Pesos da rede de imagens |
 | `weights-region.js` | Pesos da rede de regiões (gerado pelo treinador) |
-| `popup.html/css/js` | Controles, análise e feedback (treino da rede) |
+| `popup.html/css/js` | Controles e análise (somente leitura das decisões da IA) |
 | `background.js` | Atalho Alt+Shift+D e migração de schema no `onInstalled` |
-| `tools/train-page-model.js` | Treinador do modelo de páginas (regenera `weights-page.js`) |
+| `tools/nnlab.js` | Laboratório compartilhado: Adam, mini-batch, cosine LR, weight decay, holdout, early stopping, calibração |
+| `tools/train-page-model.js` | Treinador da rede de páginas (regenera `weights-page.js`) |
 | `tools/train-region-model.js` | Treinador da rede de regiões (regenera `weights-region.js`) |
+| `tools/train-image-model.js` | Treinador da rede de imagens (regenera `weights-images.js`) |
 | `tools/generate_icons.py` | Gera os ícones PNG (sem dependências) |
-| `tools/test-nn.js` | Testes das redes e do ciclo de feedback |
+| `tools/test-nn.js` | Testes das três redes, matrizes SVG e calibração |
 
 ## Instalar (desenvolvedor)
 
@@ -65,13 +70,14 @@ feedback no popup → backpropagation → pesos salvos → todas as abas se atua
 ## Testar os modelos
 
 ```
-node tools/test-nn.js           # valida as três redes e o ciclo de feedback
-node tools/train-page-model.js  # retreina a rede de páginas e regera weights-page.js
-node tools/train-region-model.js # retreina a rede de regiões e regera weights-region.js
+node tools/test-nn.js             # valida as três redes, matrizes e calibração
+node tools/train-page-model.js    # retreina a rede de páginas e regera weights-page.js
+node tools/train-region-model.js  # retreina a rede de regiões e regera weights-region.js
+node tools/train-image-model.js   # retreina a rede de imagens e regera weights-images.js
 ```
 
-Cobre inferência nos três regimes (clara/escura/mista), o ciclo de feedback
-(backprop com os mesmos parâmetros do popup), serialização e tamanho dos pesos.
+Cobre os arquétipos das três redes, o mapeamento WCAG anti-halation, as matrizes
+SVG (Filter+), a calibração de temperatura e a guarda de compatibilidade de pesos.
 
 ## Limitações conhecidas
 
