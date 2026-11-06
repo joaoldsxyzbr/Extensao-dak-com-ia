@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Chat hibrido real (fixture: Rocket.Chat do Prado)</title>
+<style>
+  /* Caso real de chat.pradoapp.com: a CASCA e escura (body escuro, texto
+     claro da sidebar legivel) e o conteudo e um PAINEL BRANCO sobreposto.
+     Nas features por elemento a pagina parece "site escuro" (quase tudo e
+     transparente e herda o fundo do body: fracDark ~0.95), mas visualmente
+     o centro e claro. Sem o arquetipo CHAT_HYBRID a IA dizia "retoque" e o
+     chat ficava branco. Proporcoes calibradas no dataLog real:
+     fracWithBg ~0.06, textLum ~0.57, lowContrast ~0.98, satHigh ~0.25. */
+  body { margin: 0; font-family: Arial, sans-serif; background: #33333d; display: flex; height: 100vh; color: #a5adc0; font-size: 14px; }
+  aside { width: 280px; flex-shrink: 0; padding: 12px; }
+  aside h2 { color: #a5adc0; font-size: 14px; margin: 0 0 8px; }
+  aside ul { list-style: none; padding: 0; margin: 0; }
+  aside li { padding: 6px 10px; color: #a5adc0; }
+  aside li.active { background: #2f3644; color: #d8dee6; }
+  aside li .count { color: #a5adc0; font-size: 12px; float: right; }
+  section { flex: 1; background: #ffffff; color: #2f3441; display: flex; flex-direction: column; }
+  .chat-head { padding: 10px 14px; color: #2f3441; border-bottom: 1px solid #e8e8ec; }
+  .chat { flex: 1; padding: 14px; }
+  .msg { color: #2f3441; margin: 6px 0; }
+  .composer { padding: 10px 14px; display: flex; gap: 8px; }
+  .composer .fake-input { flex: 1; border: 1px solid #ccccdd; color: #9aa3b1; padding: 8px; }
+  .composer button { background: #3390ec; color: #ffffff; border: none; padding: 8px 14px; }
+</style>
+</head>
+<body>
+  <aside>
+    <h2>Conversas</h2>
+    <ul>
+      <li class="active">Joao</li>
+      <li>Maria</li>
+      <li>Grupo do trabalho <span class="count">12</span></li>
+      <li>Canal de novidades</li>
+      <li>Equipe</li>
+      <li>Suporte</li>
+      <li>Vendas <span class="count">5</span></li>
+      <li>Dev</li>
+      <li>Infra</li>
+      <li>Parceiros</li>
+      <li>Comercial</li>
+      <li>Financeiro</li>
+      <li>Marketing</li>
+      <li>Produtos <span class="count">3</span></li>
+      <li>Juridico</li>
+      <li>RH</li>
+      <li>Compras</li>
+      <li>Logistica</li>
+      <li>Treinamentos</li>
+      <li>Eventos</li>
+      <li>Imprensa</li>
+      <li>Prefeitura <span class="count">7</span></li>
+      <li>Camara</li>
+      <li>Assembleia</li>
+      <li>Transparencia</li>
+      <li>Obras</li>
+      <li>Saude</li>
+      <li>Educacao</li>
+      <li>Cultura</li>
+      <li>Esporte</li>
+      <li>Agricultura</li>
+      <li>Turismo</li>
+      <li>Meio ambiente</li>
+      <li>Seguranca</li>
+      <li>Defesa civil</li>
+      <li>Animais</li>
+      <li>Idosos</li>
+      <li>Juventude</li>
+      <li>Mulher</li>
+    </ul>
+  </aside>
+  <section>
+    <div class="chat-head"><strong>Joao</strong> — online</div>
+    <div class="chat">
+      <div class="msg">Oi! Viu que o centro branco agora escurece?</div>
+      <div class="msg">Sim, e a sidebar escura continua escura.</div>
+      <div class="msg">Antes a IA achava que a pagina inteira ja era escura.</div>
+      <div class="msg">O arquetipo CHAT_HYBRID veio do dataLog real.</div>
+      <div class="msg">O texto escuro do painel clareia sozinho.</div>
+      <div class="msg">O gate visual guarda este caso pra sempre.</div>
+      <div class="msg">A confianca subiu de 6% para 100% na inversao.</div>
+      <div class="msg">E o motor por elemento cuida de cada cor.</div>
+      <div class="msg">Sem filtro global: nada de sidebar clara.</div>
+      <div class="msg">WCAG garante o contraste do texto.</div>
+      <div class="msg">Fixtures rodam a cada push no CI.</div>
+      <div class="msg">Rocket.Chat do Prado fica com cara de dark.</div>
+    </div>
+    <div class="composer">
+      <div class="fake-input">Mensagem...</div>
+      <button>Enviar</button>
+    </div>
+  </section>
+</body>
+</html>
