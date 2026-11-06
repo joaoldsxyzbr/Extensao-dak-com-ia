@@ -114,6 +114,21 @@ expect(d.invert === true && pradoConf >= 0.75,
   "PRADO -> hibrido de mensagens pesado inverte com confianca alta (antes ~67%)",
   `conf=${pradoConf.toFixed(2)}`);
 
+// caso REAL do dataLog (chat.pradoapp.com, Rocket.Chat, 06/11/2026): casca
+// escura + painel branco de conteudo. As features por elemento parecem "site
+// escuro" (fracDark 0.97), mas a pagina e hibrida com centro claro. Antes do
+// arquetipo CHAT_HYBRID a IA dizia retoque com 95% e o chat ficava branco.
+const ROCKET = [
+  0.202, 0.213, 0.002, 0.971, 0.008, 0.005, 0, 0.011, 0, 0.005,
+  0.058, 0.972, 0.005, 0.598, 0.959, 0.398, 0.339, 0.263, 0.263, 0.011,
+  0.005, 0, 0.5, 0, 0.074, 0.002, 0, 0, 0, 0, 0, 0,
+];
+d = decidePage(ROCKET);
+const rocketConf = DarlNN.calibrate(d.p[0], DARL_PAGE_WEIGHTS.temp || 1);
+expect(d.invert === true && rocketConf >= 0.75,
+  "CHAT_HYBRID -> chat real com casca escura inverte com confianca alta (antes retoque 95%)",
+  `conf=${rocketConf.toFixed(2)}`);
+
 // tema escuro nativo bem desenhado (Telegram/Discord dark): retoque quase identidade
 const TG = vec({ htmlBg: 0.05, meanBg: 0.09, h0: 0.5, h1: 0.3, fracWithBg: 0.5, fracDark: 0.75,
   textLum: 0.85, lowContrast: 0.04, contrast: 0.82, satMean: 0.3, satHigh: 0.25, colorful: 0.25,
