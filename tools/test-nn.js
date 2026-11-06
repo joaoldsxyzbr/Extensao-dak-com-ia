@@ -99,6 +99,56 @@ const msgTemp = DARL_PAGE_WEIGHTS.temp || 1;
 const msgConf = DarlNN.calibrate(d.p[0], msgTemp);
 expect(msgConf >= 0.75, "MESSAGING -> confianca alta na decisao (antes ~56%)",
   `conf=${msgConf.toFixed(2)}`);
+// novos centros da v2.3.0 (treino denso, 14 arquétipos)
+const SHOP = vec({ htmlBg: 0.96, meanBg: 0.88, h7: 0.68, fracWithBg: 0.45, fracLight: 0.72,
+  textLum: 0.15, contrast: 0.8, satMean: 0.35, satHigh: 0.28, colorful: 0.38,
+  imgFrac: 0.12, fontMean: 0.48, smallUi: 0.16, navN: 0.7, formN: 0.5 });
+d = decidePage(SHOP);
+expect(d.invert === true, "SHOP -> inverter", `brilho=${d.brightness.toFixed(2)}`);
+
+const SEARCHV = vec({ htmlBg: 1.0, meanBg: 0.96, h7: 0.85, fracWithBg: 0.12, fracLight: 0.9,
+  textLum: 0.1, contrast: 0.88, satMean: 0.08, fontMean: 0.6, formN: 0.4 });
+d = decidePage(SEARCHV);
+expect(d.invert === true && d.brightness < dLight.brightness - 0.02,
+  "SEARCH_MIN -> inverter mais escuro que o claro comum",
+  `brilho=${d.brightness.toFixed(2)} vs ${dLight.brightness.toFixed(2)}`);
+
+const SOCIALF = vec({ htmlBg: 0.93, meanBg: 0.85, h7: 0.62, fracWithBg: 0.55, fracLight: 0.68,
+  textLum: 0.14, contrast: 0.82, satMean: 0.28, colorful: 0.32, imgFrac: 0.08,
+  smallUi: 0.28, fixedFrac: 0.12, navN: 0.7, formN: 0.35 });
+d = decidePage(SOCIALF);
+expect(d.invert === true, "SOCIAL_FEED -> inverter", `brilho=${d.brightness.toFixed(2)}`);
+
+const LONGF = vec({ htmlBg: 1.0, meanBg: 0.94, h7: 0.78, fracWithBg: 0.22, fracLight: 0.85,
+  textLum: 0.12, contrast: 0.84, satMean: 0.1, mono: 0.12, fontMean: 0.56,
+  titleFrac: 0.07, articleN: 0.8, tableN: 0.35 });
+d = decidePage(LONGF);
+expect(d.invert === true && d.sepia > dLight.sepia,
+  "LONGFORM -> inverter com sépia maior (conforto de leitura)",
+  `sepia=${d.sepia.toFixed(3)} vs ${dLight.sepia.toFixed(3)}`);
+
+const GALLERYV = vec({ htmlBg: 0.9, meanBg: 0.7, h6: 0.1, h7: 0.5, fracWithBg: 0.5,
+  fracDark: 0.15, fracLight: 0.5, textLum: 0.2, contrast: 0.72, satMean: 0.3,
+  imgFrac: 0.2, bgImgFrac: 0.35, mediaN: 0.8 });
+d = decidePage(GALLERYV);
+expect(d.invert === true && d.brightness > dLight.brightness,
+  "GALLERY -> inverter mais claro (arte visível)",
+  `brilho=${d.brightness.toFixed(2)} vs ${dLight.brightness.toFixed(2)}`);
+
+const POLISH = vec({ htmlBg: 0.07, meanBg: 0.1, h0: 0.5, h1: 0.28, fracWithBg: 0.45,
+  fracDark: 0.78, textLum: 0.87, lowContrast: 0.02, contrast: 0.85, satMean: 0.14,
+  smallUi: 0.3, fixedFrac: 0.15, metaDark: 0.75 });
+d = decidePage(POLISH);
+expect(d.invert === false && d.brightness > decidePage(BLUE).brightness,
+  "DARK_POLISHED -> retoche mais suave que dashboard escuro",
+  `brilho=${d.brightness.toFixed(2)}`);
+
+const OLED = vec({ htmlBg: 0.01, meanBg: 0.03, h0: 0.8, h1: 0.12, fracWithBg: 0.35,
+  fracDark: 0.92, textLum: 0.9, lowContrast: 0.03, contrast: 0.9, satMean: 0.05, metaDark: 1 });
+d = decidePage(OLED);
+expect(d.invert === false && d.brightness > decidePage(POLISH).brightness,
+  "OLED_BLACK -> quase intocado", `brilho=${d.brightness.toFixed(2)}`);
+
 
 // ------------------------------------------------- calibracao de temperatura
 // A extensao e inference-only: nao ha mais treino no navegador (v2.0.0).
@@ -129,6 +179,13 @@ expect(imgDecide([0.45, 0.55, 0.18, 0.6, 0.2, 0.2]) === false,
   "imagem: logo colorido transparente -> restaurar");
 expect(imgDecide([0.3, 0.2, 0.1, 0.2, 0.6, 0.05]) === true,
   "imagem: icone escuro com pouca transparencia -> manter invertida");
+expect(imgDecide([0.45, 0.25, 0.12, 0.2, 0.5, 0.06]) === true,
+  "imagem: icone semitransparente medio-escuro -> manter invertida");
+expect(imgDecide([0.0, 0.62, 0.15, 0.75, 0.05, 0.5]) === false,
+  "imagem: emoji colorido opaco -> restaurar");
+expect(imgDecide([0.0, 0.8, 0.25, 0.2, 0.02, 0.7]) === false,
+  "imagem: screenshot claro opaco -> restaurar");
+
 
 // ------------------------------------------------- rede de regioes
 // Entradas: [lum, sat, textLum, contrast, areaFrac, isFixed, hasBgImg, childMediaFrac]
@@ -147,6 +204,11 @@ expect(regionKeep([0.85, 0.1, 0.12, 0.85, 0.5, 0, 0, 0.05]) === false,
   "regiao: bloco claro de conteudo -> seguir inversao da pagina");
 expect(regionKeep([0.4, 0.5, 0.5, 0.5, 0.2, 0, 0, 0.1]) === false,
   "regiao: cinza intermediario indeciso segue a pagina (conservador)");
+expect(regionKeep([0.06, 0.15, 0.85, 0.8, 0.28, 1, 0, 0.02]) === true,
+  "regiao: sidebar escura fixa de mensagens -> manter original");
+expect(regionKeep([0.05, 0.2, 0.7, 0.6, 0.3, 0, 0, 0.85]) === true,
+  "regiao: area de video escura -> manter original");
+
 
 // ------------------------------------------------- infra
 const ser = DarlNN.serialize(pageNet);
