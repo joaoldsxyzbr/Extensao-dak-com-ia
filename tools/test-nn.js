@@ -323,6 +323,18 @@ expect(LR.labelEntry({ antes: { meanLum: 1.0, darkFrac: 0, lumStd: 0.005 }, feat
   "dados reais: pagina em branco/erro descartada");
 expect(LR.labelEntry({ antes: { meanLum: 0.5, darkFrac: 0.4, lumStd: 0.06 }, features: new Array(32).fill(0.1) }) === null,
   "dados reais: hibrido ambiguo descartado (sem rotulo confiavel)");
+// hibrido de APARENCIA (screenshot cinza) desambiguado pelo CONTEUDO (v4.3.1):
+// paginas claras cheias de midias (hero colorido arrasta o meanLum, o elemento
+// nao mente) e paginas escuras com aparencia cinza.
+const hLight = new Array(32).fill(0.2); hLight[12] = 0.97; hLight[13] = 0.25;
+expect(LR.labelEntry({ antes: { meanLum: 0.42, darkFrac: 0.29, lumStd: 0.3 }, features: hLight }).label === "light",
+  "dados reais: hibrido de aparencia com conteudo claro rotulado inverter (ex. vimeo/threads)");
+const hDark = new Array(32).fill(0.2); hDark[11] = 0.96; hDark[13] = 0.9;
+expect(LR.labelEntry({ antes: { meanLum: 0.43, darkFrac: 0.39, lumStd: 0.31 }, features: hDark }).label === "dark",
+  "dados reais: hibrido de aparencia com conteudo escuro rotulado retoque (ex. roblox/steam)");
+const hAmb = new Array(32).fill(0.2); hAmb[12] = 0.97; hAmb[13] = 0.56;
+expect(LR.labelEntry({ antes: { meanLum: 0.57, darkFrac: 0.4, lumStd: 0.44 }, features: hAmb }) === null,
+  "dados reais: hibrido com texto na zona cinza continua descartado");
 
 // ------------------------------------------------- infra
 const dimsRef = [32, 32, 24, 6];
