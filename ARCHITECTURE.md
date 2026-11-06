@@ -115,12 +115,19 @@ cor por cor com regras de luminância — fundo claro vira escuro preservando o
 matiz (branco → ~#1b1b1b, nunca preto puro), texto escuro vira claro com guarda
 de contraste WCAG AA (≥ 4.5:1 contra o fundo mapeado), bordas/sombras/gradientes
 são remapeadas junto, `fill`/`stroke` de SVG também. Elementos ganham o atributo
-`darl-el` e regras `!important` num `<style>` próprio; a varredura é incremental
-(lotes de ~120 via `requestIdleCallback`, teto de 8000 elementos, re-scan
-throttled de 1.5s para SPAs). Fotos e vídeos ficam intactos por construção —
+`darl-el` e regras `!important` num `<style>` próprio (flush incremental:
+só o delta de regras entra no DOM); a varredura é incremental
+(lotes de ~120 via `requestIdleCallback`, teto de 30000 elementos — v4.3.2:
+a visão de conversa do Rocket.Chat passa de 8000 e ficava metade remapeada —,
+re-scan throttled de 1.5s para SPAs). Fotos e vídeos ficam intactos por construção —
 não existe inversão global para reverter. `color-scheme: dark` no `<html>` escurece
 controles nativos e barras de rolagem. Acima do teto ou em erro: fallback
-automático para o modo filtro. É o motor que resolve páginas híbridas (sidebar
+automático para o modo filtro, **lacrado** até a próxima navegação (`engineFellBack`
+no `content.js`): sem o lacre, o re-scan de SPA re-entrava no motor, estourava o
+teto de novo e a página oscilava entre meio-remapeada e invertida. **Acentos
+vivos** (v4.3.2): elementos minusculos (≤ 14px) com cor clara e saturada
+(bolinha de presença, badge) mantêm a cor original — a cor viva é o sinal
+visual; o remapeamento normal os apagaria. É o motor que resolve páginas híbridas (sidebar
 escura + chat claro) sem rede de regiões. Estados de interação (`:hover`,
 `:focus`) e pseudo-elementos não existem no estilo computado em repouso: a
 **guarda de interação** (v4.2) observa `mouseover`/`focusin` no documento e,
