@@ -2,6 +2,18 @@
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
 
+## [4.2.1] — coleta de dados reais ampliada (infra)
+
+### Adicionado
+- `tools/dev/sites.txt` de 12 para **120 sites reais** selecionados do ranking
+  público Majestic Million com deduplicação por marca e curadoria manual
+  (sem infra/redirect/APIs): redes sociais, portais, e-commerce, docs/dev,
+  governo, universidades, ciência e um bloco Brasil (Globo, UOL, Mercado
+  Livre, Magazine Luiza etc.). Variedade de estilo vale mais que rank bruto.
+- Gatilho `[crawl]`: commit com essa tag na mensagem dispara o job
+  `crawl-real` na hora, além do semanal — a coleta deixa de esperar a
+  segunda-feira quando a lista muda.
+
 ## [4.2.0] — guarda de interação: hover/foco em tempo real
 
 ### Corrigido
