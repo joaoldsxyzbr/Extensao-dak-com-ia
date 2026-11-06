@@ -35,8 +35,9 @@ const FIXTURE_RULES = {
   "light.html": { darkFrac: 0.55, meanLum: 0.45, lumStd: 0.05 },
   "hybrid.html": { darkFrac: 0.55, meanLum: 0.45, lumStd: 0.03, halvesDarkFrac: 0.5 },
   // casca escura + painel branco sobreposto (Rocket.Chat real): as features
-  // por elemento parecem "site escuro", mas o painel central tem que escurecer
-  "hybrid-chat.html": { darkFrac: 0.55, meanLum: 0.45, lumStd: 0.03, halvesDarkFrac: 0.5 },
+  // por elemento parecem "site escuro", mas o painel central tem que escurecer;
+  // o probe de hover prova que a linha clara do :hover original nao vaza
+  "hybrid-chat.html": { darkFrac: 0.55, meanLum: 0.45, lumStd: 0.03, halvesDarkFrac: 0.5, hoverProbe: "li.probe", hoverMaxLum: 0.5 },
   "dark.html": { darkFrac: 0.6, maxDeltaE: 45 }, // ja escuro: retoque quase identidade
 };
 
@@ -52,13 +53,28 @@ function serveDir(dir) {
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
 }
 
-async function shoot(context, url, name, tag) {
+async function shoot(context, url, name, tag, rule) {
   const page = await context.newPage();
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto(url, { waitUntil: "networkidle", timeout: 30000 }).catch(() => {});
   await page.waitForTimeout(1800); // varredura por elemento + rede de imagens
   const shot = path.join(OUT_DIR, `${name}.${tag}.png`);
   await page.screenshot({ path: shot, fullPage: false });
+  // probe de interacao: hover real no elemento e screenshot dele sozinho.
+  // A guarda de interacao (element.js, v4.2) tem de escurecer o hover
+  // claro do tema original na hora - se a linha ficar clara, o gate falha.
+  let hover = null;
+  if (tag === "depois" && rule && rule.hoverProbe) {
+    const target = page.locator(rule.hoverProbe).first();
+    if (await target.count()) {
+      await target.hover({ force: true }).catch(() => {});
+      await page.waitForTimeout(700); // mouseover -> guarda -> flush
+      const hoverShot = path.join(OUT_DIR, `${name}.hover.png`);
+      await target.screenshot({ path: hoverShot }).catch(() => {});
+      const H = metrics.analyze(hoverShot);
+      hover = +H.stats.meanLum.toFixed(3);
+    }
+  }
   // a extensao aplicou estilos nesta pagina? (diagnostico: no headless-shell
   // do Playwright as extensoes nao carregam e o gate falha sem explicacao)
   const extApplied = await page.evaluate(() => Boolean(
@@ -71,7 +87,7 @@ async function shoot(context, url, name, tag) {
   const featuresSrc = fs.readFileSync(path.join(ROOT, "darl-features.js"), "utf8");
   const features = await page.evaluate(`${featuresSrc}\n(globalThis.DarlFeatures && DarlFeatures.extract({ skipStyleIds: ["darl-dark-style", "darl-flash-cover", "darl-element-style"] }))`).catch(() => null);
   await page.close();
-  return { shot, features, extApplied };
+  return { shot, features, extApplied, hover };
 }
 
 async function main() {
@@ -120,8 +136,8 @@ async function main() {
 
   for (const t of targets) {
     try {
-      const before = await shoot(beforeCtx, t.url, t.name, "antes");
-      const after = await shoot(afterCtx, t.url, t.name, "depois");
+      const before = await shoot(beforeCtx, t.url, t.name, "antes", t.rule);
+      const after = await shoot(afterCtx, t.url, t.name, "depois", t.rule);
       const A = metrics.analyze(before.shot);
       const B = metrics.analyze(after.shot);
       const de = metrics.deltaE76(A.img, B.img);
@@ -129,6 +145,7 @@ async function main() {
         name: t.name, url: t.url,
         antes: { meanLum: +A.stats.meanLum.toFixed(3), darkFrac: +A.stats.darkFrac.toFixed(3), lumStd: +A.stats.lumStd.toFixed(3) },
         depois: { meanLum: +B.stats.meanLum.toFixed(3), darkFrac: +B.stats.darkFrac.toFixed(3), lumStd: +B.stats.lumStd.toFixed(3) },
+        hover: after.hover,
         deltaE76: +de.toFixed(1),
         features: after.features,
         extApplied: after.extApplied,
@@ -142,6 +159,10 @@ async function main() {
         if (B.stats.darkFrac < r.darkFrac) errs.push(`darkFrac ${B.stats.darkFrac.toFixed(2)} < ${r.darkFrac}`);
         if (r.meanLum && B.stats.meanLum > r.meanLum) errs.push(`meanLum ${B.stats.meanLum.toFixed(2)} > ${r.meanLum}`);
         if (r.lumStd && B.stats.lumStd < r.lumStd) errs.push(`lumStd ${B.stats.lumStd.toFixed(3)} < ${r.lumStd} (texto apagado?)`);
+        if (r.hoverMaxLum != null) {
+          if (after.hover == null) errs.push("probe de hover nao rodou");
+          else if (after.hover > r.hoverMaxLum) errs.push(`hover claro (meanLum ${after.hover.toFixed(2)} > ${r.hoverMaxLum})`);
+        }
         if (r.maxDeltaE && de > r.maxDeltaE) errs.push(`deltaE76 ${de.toFixed(1)} > ${r.maxDeltaE} (mexeu demais num site ja escuro)`);
         if (r.halvesDarkFrac) {
           const left = metrics.lumStats(metrics.cropH(B.img, 0, 0.5));
