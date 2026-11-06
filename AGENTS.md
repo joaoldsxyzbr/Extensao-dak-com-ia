@@ -89,7 +89,7 @@ partir do `htmlBg`; misturas com BLUE_DASH interpolam, não sobrescrevem).
 | `background.js` | Atalho Alt+Shift+D, migração de schema no `onInstalled` | sim |
 | `tools/nnlab.js` | Laboratório: Adam, mini-batch, cosine LR, weight decay, holdout, early stop, calibração | sim |
 | `tools/train-*.js` | Treinadores (professor + geração de pesos) | sim |
-| `tools/test-nn.js` | Suite de regressão (35 testes) | sim (expectativas explícitas) |
+| `tools/test-nn.js` | Suite de regressão (52 testes) | sim (expectativas explícitas) |
 | `tools/generate_icons.py` | Geração de ícones PNG com supersampling | sim |
 
 Documentação ampla em [ARCHITECTURE.md](ARCHITECTURE.md); histórico em
