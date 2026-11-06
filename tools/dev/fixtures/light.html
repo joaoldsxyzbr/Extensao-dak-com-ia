@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Blog claro (fixture de regressao visual)</title>
+<style>
+  body { margin: 0; font-family: Georgia, serif; background: #ffffff; color: #1a1a1a; }
+  header { background: linear-gradient(rgb(240, 244, 255), rgb(255, 255, 255)); padding: 24px; border-bottom: 1px solid rgb(221, 221, 221); }
+  header h1 { margin: 0; color: #111111; }
+  nav { background: #f7f7f7; padding: 10px 24px; border-bottom: 1px solid #dddddd; }
+  nav a { color: #0000ee; margin-right: 16px; text-decoration: underline; }
+  main { max-width: 720px; margin: 0 auto; padding: 24px; }
+  article h2 { color: #222222; }
+  article p { line-height: 1.6; }
+  .card { background: #f2f2f2; border: 1px solid #cccccc; border-radius: 8px; padding: 16px; margin: 16px 0; box-shadow: rgba(0, 0, 0, 0.1) 0px 2px 6px; }
+  .card strong { color: #000000; }
+  footer { background: #eeeeee; color: #333333; padding: 20px 24px; border-top: 2px solid #bbbbbb; }
+  form { margin: 16px 0; }
+  input, textarea { background: #ffffff; color: #111111; border: 1px solid #999999; padding: 8px; }
+  button { background: #0055cc; color: #ffffff; border: none; padding: 8px 16px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>Blog do Teste Claro</h1>
+  </header>
+  <nav>
+    <a href="#">Inicio</a><a href="#">Arquivo</a><a href="#">Sobre</a>
+  </nav>
+  <main>
+    <article>
+      <h2>Por que paginas claras precisam de analise por elemento</h2>
+      <p>Esta pagina e uma fixture de regressao visual: fundo branco, texto escuro,
+      links azuis, cards cinzas com bordas e sombras, formulario com input branco.
+      A extensao deve escurecer tudo isso elemento a elemento, mantendo o matiz dos
+      links azuis e o contraste do texto acima de 4.5:1.</p>
+      <p>O motor por elemento le o estilo computado de cada no do DOM e remapeia as
+      cores uma a uma. Nada de filtro global de inversao aqui.</p>
+    </article>
+    <div class="card">
+      <strong>Card com sombra clara.</strong>
+      <p>Fundo cinza claro, borda cinza media e sombra suave: tudo remapeado.</p>
+    </div>
+    <form>
+      <p><input type="text" placeholder="Escreva algo" size="40"></p>
+      <p><textarea rows="3" cols="44">Comentario</textarea></p>
+      <p><button>Enviar comentario</button></p>
+    </form>
+  </main>
+  <footer>Rodape claro cinza com borda mais escura e texto cinza-escuro.</footer>
+</body>
+</html>
