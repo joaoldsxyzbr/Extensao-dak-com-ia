@@ -293,6 +293,24 @@ expect(DarlFeatures.parseRGB(mbA.css) && Math.abs(DarlFeatures.parseRGB(mbA.css)
 expect(DE.parseColorList("rgb(1, 2, 3) rgba(4, 5, 6, 0.5)").length === 2,
   "elemento: parser de listas de cores");
 
+// ------------------------------------------- guarda de interacao (v4.2)
+// Regras :hover/:focus nao existem no estilo computado em repouso: a guarda
+// le o estado naquele instante e congela o remapeamento no elemento.
+const gh = DE.guardDecls({ r: 225, g: 228, b: 233, a: 1 }, "none", { r: 47, g: 52, b: 65, a: 1 });
+expect(gh.length === 2,
+  "guarda: hover claro gera fundo escuro + texto claro", gh.join(" | "));
+const ghBg = DarlFeatures.parseRGB(gh[0]);
+const ghFg = DarlFeatures.parseRGB(gh[1]);
+expect(DarlFeatures.lum(ghBg.r, ghBg.g, ghBg.b) < 0.25 && DarlFeatures.lum(ghFg.r, ghFg.g, ghFg.b) > 0.7,
+  "guarda: regras do hover ficam legiveis (fundo escuro, texto claro)");
+
+const ghKeep = DE.guardDecls({ r: 47, g: 52, b: 65, a: 1 }, "none", { r: 216, g: 222, b: 230, a: 1 });
+expect(ghKeep.length === 0, "guarda: hover ja escuro nao gera regra", String(ghKeep.length));
+
+const ghGrad = DE.guardDecls(null, "linear-gradient(rgb(255, 255, 255), rgb(240, 240, 240))", null);
+expect(ghGrad.length === 1 && ghGrad[0].startsWith("background-image:"),
+  "guarda: gradiente de hover claro vira escuro", ghGrad[0].slice(0, 60));
+
 // ------------------------------------------------- infra
 const dimsRef = [32, 32, 24, 6];
 const refNet = DarlNN.makeNet(dimsRef);
