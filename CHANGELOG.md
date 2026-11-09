@@ -40,6 +40,13 @@ Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
   e commita o dataset na main) publicado em `tools/dev/ci-v4.3.4.yml` —
   aplicar manualmente em `.github/workflows/ci.yml` (o conector GitHub
   não tem permissão para arquivos de workflow).
+- **"Reportar problema nesta página"** no popup: um clique baixa um JSON
+  único com host + URL (sem query/hash) + as 32 features + a decisão da
+  IA (motor, confiança, knobs) + as configurações — pronto para colar no
+  chat do mantenedor. Encurta o ciclo de diagnóstico (report → arquétipo
+  → fixture → retreino) sem exportar o dataLog inteiro. Continua 100%
+  local e opt-in: nada sai do navegador sem o clique (`background.js`,
+  via `chrome.downloads`, como o export de dados).
 
 ### Observado
 - Suite: **94 testes** (+5 de frames sem content script).
