@@ -4,7 +4,8 @@
   "description": "Ferramentas de desenvolvimento da Extensão Dark com IA: crawler de regressão visual (Playwright) e métricas perceptuais. Nada daqui vai para o runtime da extensão.",
   "scripts": {
     "crawl:fixtures": "node crawl.js --fixtures",
-    "crawl:sites": "node crawl.js --sites sites.txt"
+    "crawl:sites": "node crawl.js --sites sites.txt",
+    "lists:darkreader": "node fetch-darkreader-lists.js"
   },
   "dependencies": {
     "playwright": "^1.49.0"
