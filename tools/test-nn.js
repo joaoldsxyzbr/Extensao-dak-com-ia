@@ -455,5 +455,19 @@ const blue = mx.applyColorMatrix([40, 80, 220], inv);
 expect(blue[2] > blue[0] + 30 && blue[2] > blue[1], "matiz preservado: azul continua azul",
   `rgb(${blue.join(",")})`);
 
+// ------------------------------------------- frames sem content script (v4.3.4)
+// O MV3 injeta o content script em frames http(s) (all_frames), mas NAO em
+// about:blank/srcdoc: o documento topo tem de remapea-los pelo contentDocument.
+expect(DarlElement.isUnscriptedFrameURL("about:blank"),
+  "frame: about:blank e remapeavel pelo topo");
+expect(DarlElement.isUnscriptedFrameURL("about:srcdoc"),
+  "frame: about:srcdoc e remapeavel pelo topo");
+expect(!DarlElement.isUnscriptedFrameURL("https://chat.pradoapp.com/direct/joao"),
+  "frame: http(s) tem content script proprio (all_frames), topo nao mexe");
+expect(!DarlElement.isUnscriptedFrameURL(""),
+  "frame: URL vazia nao e alvo do motor de frames");
+expect(!DarlElement.isUnscriptedFrameURL(null),
+  "frame: tipo invalido nao derruba o motor");
+
 console.log(failures === 0 ? "\ntodos os testes passaram" : `\n${failures} falha(s)`);
 process.exit(failures === 0 ? 0 : 1);
