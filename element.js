@@ -560,6 +560,30 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     return typeof url === "string" && (url === "about:blank" || url === "about:srcdoc");
   }
 
+  // Pura (v4.3.4): deteccao DECLARATIVA de iframe sem content script. O
+  // doc.URL de um frame about:blank HERDA a URL do pai no Chrome (heranca
+  // de URL da spec), entao conferir doc.URL nunca identifica o frame —
+  // foi exatamente o bug do CI. Os sinais confiaveis sao os ATRIBUTOS:
+  // o MV3 injeta content script apenas em frames navegados por http(s)/
+  // ws/fp etc. (match patterns); qualquer frame cujo alvo declarativo e
+  // srcdoc, sem src, src vazio, about:blank, javascript:, data: ou blob:
+  // NAO recebe script — e quem remapeia por ele e o documento topo.
+  // Navegacao http(s) sempre deixa src nao-vazio (inclusive via
+  // iframe.src = "...", que reflete no atributo), entao nao ha falso
+  // positivo de frame http tratado como sem-script.
+  function isUnscriptedFrameAttrs(srcAttr, hasSrcdoc) {
+    if (hasSrcdoc === true) return true;
+    const s = typeof srcAttr === "string" ? srcAttr.trim().toLowerCase() : "";
+    if (!s) return true; // sem src: about:blank sincrono (editores, previews)
+    return (
+      s === "about:blank" ||
+      s === "about:srcdoc" ||
+      s.startsWith("javascript:") ||
+      s.startsWith("data:") ||
+      s.startsWith("blob:")
+    );
+  }
+
   const api = {
     start, stop,
     isActive: () => active,
@@ -567,7 +591,7 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     mapBackground, mapText, mapNeutral, remapGradient, remapShadow,
     rgbToHsl, lum255: (r, g, b) => lum255(r, g, b), guardDecls,
     parseColorList, isAccentColor, isAccentSize, saturation255,
-    isQueueableNode, isUnscriptedFrameURL,
+    isQueueableNode, isUnscriptedFrameURL, isUnscriptedFrameAttrs,
     ACCENT_SAT, ACCENT_MAX_PX, FLUSH_MS, GUARD_RECHECK_MS,
     STYLE_ID, MARK_ATTR, GUARD_ATTR, MAX_ELEMENTS,
     _internals: { BG_LIGHT, TEXT_DARK, CANVAS_L, contrastRatio, elementRule, guardInteraction },
