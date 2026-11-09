@@ -551,6 +551,15 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
       /* DOM ja destruido */ }
   }
 
+  // Pura (v4.3.4): URL de documento de frame que o MV3 NAO injeta com
+  // content script (about:blank e about:srcdoc). Esses frames (editores
+  // embutidos, viewers de preview, caixas de texto rica) ficariam paineis
+  // brancos no meio do tema escuro: quem remapeia por eles e o documento
+  // TOP, que alcança o contentDocument de frames de mesma origem.
+  function isUnscriptedFrameURL(url) {
+    return typeof url === "string" && (url === "about:blank" || url === "about:srcdoc");
+  }
+
   const api = {
     start, stop,
     isActive: () => active,
@@ -558,7 +567,7 @@ img.dd-keep { filter: invert(1) hue-rotate(180deg) brightness(1.15) !important; 
     mapBackground, mapText, mapNeutral, remapGradient, remapShadow,
     rgbToHsl, lum255: (r, g, b) => lum255(r, g, b), guardDecls,
     parseColorList, isAccentColor, isAccentSize, saturation255,
-    isQueueableNode,
+    isQueueableNode, isUnscriptedFrameURL,
     ACCENT_SAT, ACCENT_MAX_PX, FLUSH_MS, GUARD_RECHECK_MS,
     STYLE_ID, MARK_ATTR, GUARD_ATTR, MAX_ELEMENTS,
     _internals: { BG_LIGHT, TEXT_DARK, CANVAS_L, contrastRatio, elementRule, guardInteraction },
