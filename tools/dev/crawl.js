@@ -98,12 +98,23 @@ async function shoot(context, url, name, tag, rule) {
       await target.screenshot({ path: frameShot }).catch(() => {});
       const F = metrics.analyze(frameShot);
       frame = +F.stats.meanLum.toFixed(3);
-      // por que o frame ficou claro? estado do motor de frames por iframe
-      frameDiag = await page.evaluate(() => {
+      // por que o frame ficou claro? estado do motor de frames por iframe.
+      // element.js avaliado junto (mesmo padrao do darl-features): o
+      // veredito "unscripted" vem da funcao real, nao de uma copia que
+      // pode divergir.
+      const elementSrc = fs.readFileSync(path.join(ROOT, "element.js"), "utf8");
+      frameDiag = await page.evaluate(`${elementSrc}
+(() => {
         const out = { iframes: [], topStyle: null, elementStyle: null };
         out.elementStyle = Boolean(document.getElementById("darl-element-style"));
         for (const f of document.getElementsByTagName("iframe")) {
-          const info = { src: f.getAttribute("src"), url: null, docOk: null, frameStyle: null, marked: 0 };
+          const info = {
+            src: f.getAttribute("src"), srcdoc: f.hasAttribute("srcdoc"),
+            unscripted: (globalThis.DarlElement && DarlElement.isUnscriptedFrameAttrs)
+              ? DarlElement.isUnscriptedFrameAttrs(f.getAttribute("src"), f.hasAttribute("srcdoc"))
+              : null,
+            url: null, docOk: null, frameStyle: null, marked: 0
+          };
           try {
             const d = f.contentDocument;
             info.url = d ? d.URL : null;
@@ -116,7 +127,7 @@ async function shoot(context, url, name, tag, rule) {
           out.iframes.push(info);
         }
         return out;
-      }).catch((err) => ({ error: String(err) }));
+      })()`).catch((err) => ({ error: String(err) }));
     }
   }
   // a extensao aplicou estilos nesta pagina? (diagnostico: no headless-shell
