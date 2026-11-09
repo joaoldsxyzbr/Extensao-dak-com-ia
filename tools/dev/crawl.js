@@ -58,6 +58,15 @@ function serveDir(dir) {
 async function shoot(context, url, name, tag, rule) {
   const page = await context.newPage();
   await page.setViewportSize({ width: 1280, height: 800 });
+  // diagnostico: erros/warnings da extensao (content script) na passada "depois"
+  const consoleMsgs = [];
+  if (tag === "depois") {
+    page.on("console", (m) => {
+      const t = m.type();
+      if (t === "error" || t === "warning") consoleMsgs.push(`${t}: ${m.text().slice(0, 200)}`);
+    });
+    page.on("pageerror", (e) => consoleMsgs.push(`pageerror: ${String(e).slice(0, 200)}`));
+  }
   await page.goto(url, { waitUntil: "networkidle", timeout: 30000 }).catch(() => {});
   await page.waitForTimeout(1800); // varredura por elemento + rede de imagens
   const shot = path.join(OUT_DIR, `${name}.${tag}.png`);
@@ -80,6 +89,7 @@ async function shoot(context, url, name, tag, rule) {
   // probe de frame (v4.3.4): iframe about:blank não recebe content script —
   // o documento topo tem de remapeá-lo; se a prévia ficar clara, o gate falha.
   let frame = null;
+  let frameDiag = null;
   if (tag === "depois" && rule && rule.frameProbe) {
     const target = page.locator(rule.frameProbe).first();
     if (await target.count()) {
@@ -88,6 +98,25 @@ async function shoot(context, url, name, tag, rule) {
       await target.screenshot({ path: frameShot }).catch(() => {});
       const F = metrics.analyze(frameShot);
       frame = +F.stats.meanLum.toFixed(3);
+      // por que o frame ficou claro? estado do motor de frames por iframe
+      frameDiag = await page.evaluate(() => {
+        const out = { iframes: [], topStyle: null, elementStyle: null };
+        out.elementStyle = Boolean(document.getElementById("darl-element-style"));
+        for (const f of document.getElementsByTagName("iframe")) {
+          const info = { src: f.getAttribute("src"), url: null, docOk: null, frameStyle: null, marked: 0 };
+          try {
+            const d = f.contentDocument;
+            info.url = d ? d.URL : null;
+            info.docOk = Boolean(d && d.documentElement);
+            info.frameStyle = Boolean(d && d.getElementById("darl-frame-style"));
+            if (d) info.marked = d.querySelectorAll("[darl-frame-el]").length;
+          } catch (err) {
+            info.docOk = "throw " + String(err).slice(0, 100);
+          }
+          out.iframes.push(info);
+        }
+        return out;
+      }).catch((err) => ({ error: String(err) }));
     }
   }
   // a extensao aplicou estilos nesta pagina? (diagnostico: no headless-shell
@@ -102,7 +131,7 @@ async function shoot(context, url, name, tag, rule) {
   const featuresSrc = fs.readFileSync(path.join(ROOT, "darl-features.js"), "utf8");
   const features = await page.evaluate(`${featuresSrc}\n(globalThis.DarlFeatures && DarlFeatures.extract({ skipStyleIds: ["darl-dark-style", "darl-flash-cover", "darl-element-style"] }))`).catch(() => null);
   await page.close();
-  return { shot, features, extApplied, hover, frame };
+  return { shot, features, extApplied, hover, frame, frameDiag, consoleMsgs };
 }
 
 async function main() {
@@ -162,6 +191,8 @@ async function main() {
         depois: { meanLum: +B.stats.meanLum.toFixed(3), darkFrac: +B.stats.darkFrac.toFixed(3), lumStd: +B.stats.lumStd.toFixed(3) },
         hover: after.hover,
         frame: after.frame,
+        frameDiag: after.frameDiag,
+        consoleMsgs: after.consoleMsgs && after.consoleMsgs.length ? after.consoleMsgs : undefined,
         deltaE76: +de.toFixed(1),
         features: after.features,
         extApplied: after.extApplied,
@@ -181,7 +212,12 @@ async function main() {
         }
         if (r.frameMaxLum != null) {
           if (after.frame == null) errs.push("probe de frame nao rodou");
-          else if (after.frame > r.frameMaxLum) errs.push(`frame about:blank claro (meanLum ${after.frame.toFixed(2)} > ${r.frameMaxLum})`);
+          else if (after.frame > r.frameMaxLum) {
+            errs.push(`frame about:blank claro (meanLum ${after.frame.toFixed(2)} > ${r.frameMaxLum})`);
+            // o diagnostico vai junto no report/issue: qual o estado do motor
+            if (after.frameDiag) errs.push(`frameDiag ${JSON.stringify(after.frameDiag)}`);
+            if (after.consoleMsgs && after.consoleMsgs.length) errs.push(`console ${JSON.stringify(after.consoleMsgs.slice(0, 5))}`);
+          }
         }
         if (r.maxDeltaE && de > r.maxDeltaE) errs.push(`deltaE76 ${de.toFixed(1)} > ${r.maxDeltaE} (mexeu demais num site ja escuro)`);
         if (r.halvesDarkFrac) {
