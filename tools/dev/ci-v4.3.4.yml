@@ -1,0 +1,213 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "0 6 * * 1" # semanal, segunda 06:00 UTC: crawler em sites reais
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Sintaxe de todos os JS
+        run: find . -name "*.js" -not -path "./tools/dev/node_modules/*" -exec node --check {} \;
+
+      - name: Suite de regressao das redes e do motor por elemento
+        run: node tools/test-nn.js
+
+      - name: Duelo GBDT x MLP (o commitado precisa continuar elegivel)
+        run: node tools/train-page-gbdt.js
+
+      - name: Treinadores reproduzem os pesos commitados
+        run: |
+          node tools/train-page-gbdt.js --write
+          node tools/train-region-model.js
+          node tools/train-image-model.js
+          git diff --exit-code -- weights-page.js weights-region.js weights-images.js
+
+  # Regressao visual deterministica: fixtures locais (sem rede externa),
+  # screenshots antes/depois com a extensao carregada e metricas perceptuais.
+  visual:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar ferramentas de dev (Playwright)
+        working-directory: tools/dev
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Crawler nas fixtures (gate)
+        working-directory: tools/dev
+        run: |
+          mkdir -p out
+          set -o pipefail
+          node crawl.js --fixtures 2>&1 | tee out/crawl-output.txt
+
+      - name: Diagnostico em issue (auto, so em falha)
+        if: failure()
+        working-directory: tools/dev
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          {
+            echo "## Saida do crawler"
+            echo '```'
+            cat out/crawl-output.txt 2>/dev/null || echo "(sem saida do crawler)"
+            echo '```'
+            echo "## report.json"
+            echo '```json'
+            cat out/report.json 2>/dev/null || echo '"(sem report.json)"'
+            echo '```'
+          } > /tmp/diag.md
+          jq -n --arg t "[auto] Regressao visual falhou (run $GITHUB_RUN_ID)" \
+                --rawfile b /tmp/diag.md \
+                '{title: $t, body: $b}' > /tmp/issue.json
+          curl -sf -X POST \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/issues" \
+            -d @/tmp/issue.json
+
+      - name: Publicar screenshots e relatorio
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: regressao-visual
+          path: tools/dev/out/
+          retention-days: 14
+
+  # Coleta em sites reais, FATIADA (v4.3.4): a lista tem 187 sites e um job
+  # unico morria no shutdown externo do runner (~40 min, exit 143). Tres
+  # fatias paralelas (~63 sites, ~20 min cada) + job registrador que
+  # mescla e commita o dataset. Sem gate duro (internet e flutuante).
+  crawl-real:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && contains(github.event.head_commit.message, '[crawl]'))
+    strategy:
+      fail-fast: false
+      matrix:
+        slice: [0, 1, 2]
+    timeout-minutes: 35
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      TOTAL_SLICES: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Instalar ferramentas de dev (Playwright)
+        working-directory: tools/dev
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Fatia a lista de sites (intercalada, sem repetir marca)
+        working-directory: tools/dev
+        run: |
+          node -e '
+          const fs = require("fs");
+          const idx = process.env.SLICE_INDEX;
+          const n = Number(process.env.TOTAL_SLICES);
+          const urls = fs.readFileSync("sites.txt", "utf8")
+            .split("\n").filter(l => l.startsWith("https://"));
+          const mine = urls.filter((_, i) => i % n === idx);
+          fs.writeFileSync("sites-slice.txt", mine.join("\n") + "\n");
+          console.log(`fatia ${idx}/${n}: ${mine.length} sites`);
+          '
+        env:
+          SLICE_INDEX: ${{ matrix.slice }}
+
+      - name: Crawler na fatia
+        working-directory: tools/dev
+        run: |
+          mkdir -p out
+          node crawl.js --sites sites-slice.txt
+
+      - name: Publicar report da fatia
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crawl-slice-${{ matrix.slice }}
+          path: tools/dev/out/report.json
+          retention-days: 3
+
+  # Mescla as fatias (best effort: usa as que terminaram), commita o dataset
+  # na main (retreino reproduzivel) e publica o artefato da semana.
+  crawl-real-registrar:
+    needs: crawl-real
+    if: always() && needs.crawl-real.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # commita o dataset de volta no repo (retreino local)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Baixar reports das fatias
+        uses: actions/download-artifact@v4
+        with:
+          pattern: crawl-slice-*
+          merge-multiple: true
+          path: slices
+
+      - name: Mesclar fatias num dataset unico
+        run: |
+          mkdir -p tools/dev/data
+          node -e '
+          const fs = require("fs");
+          const dir = "slices";
+          const files = fs.readdirSync(dir).filter(f => f.endsWith(".json"));
+          if (files.length === 0) { console.log("sem fatias concluidas"); process.exit(0); }
+          let pages = [];
+          for (const f of files) {
+            const arr = JSON.parse(fs.readFileSync(dir + "/" + f, "utf8"));
+            console.log(f, arr.length, "paginas");
+            pages = pages.concat(arr);
+          }
+          const out = `tools/dev/data/report-${new Date().toISOString().slice(0, 10)}.json`;
+          fs.writeFileSync(out, JSON.stringify(pages, null, 2));
+          console.log(out, pages.length, "paginas no total");
+          '
+
+      - name: Registrar dataset no repositorio (retreino local)
+        working-directory: tools/dev
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ ! -f data/report-$(date -u +%Y-%m-%d).json ]; then
+            echo "sem dataset novo a registrar"
+            exit 0
+          fi
+          git add data
+          git commit -m "chore(dados): dataset do crawl real de $(date -u +%F) [skip ci]" || echo "nada novo a registrar"
+          git pull --rebase origin main
+          git push
+
+      - name: Publicar dataset da semana
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dataset-sites-reais
+          path: tools/dev/data/
+          retention-days: 90
