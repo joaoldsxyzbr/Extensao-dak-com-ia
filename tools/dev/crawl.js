@@ -36,8 +36,10 @@ const FIXTURE_RULES = {
   "hybrid.html": { darkFrac: 0.55, meanLum: 0.45, lumStd: 0.03, halvesDarkFrac: 0.5 },
   // casca escura + painel branco sobreposto (Rocket.Chat real): as features
   // por elemento parecem "site escuro", mas o painel central tem que escurecer;
-  // o probe de hover prova que a linha clara do :hover original nao vaza
-  "hybrid-chat.html": { darkFrac: 0.55, meanLum: 0.45, lumStd: 0.03, halvesDarkFrac: 0.5, hoverProbe: "li.probe", hoverMaxLum: 0.5 },
+  // o probe de hover prova que a linha clara do :hover original nao vaza;
+  // o probe de frame prova que o iframe about:blank (sem content script)
+  // escurece pelo motor de frames do documento topo (v4.3.4)
+  "hybrid-chat.html": { darkFrac: 0.55, meanLum: 0.45, lumStd: 0.03, halvesDarkFrac: 0.5, hoverProbe: "li.probe", hoverMaxLum: 0.5, frameProbe: "iframe.probe", frameMaxLum: 0.5 },
   "dark.html": { darkFrac: 0.6, maxDeltaE: 45 }, // ja escuro: retoque quase identidade
 };
 
@@ -75,6 +77,19 @@ async function shoot(context, url, name, tag, rule) {
       hover = +H.stats.meanLum.toFixed(3);
     }
   }
+  // probe de frame (v4.3.4): iframe about:blank não recebe content script —
+  // o documento topo tem de remapeá-lo; se a prévia ficar clara, o gate falha.
+  let frame = null;
+  if (tag === "depois" && rule && rule.frameProbe) {
+    const target = page.locator(rule.frameProbe).first();
+    if (await target.count()) {
+      await page.waitForTimeout(600); // passada de frames + varredura do frame
+      const frameShot = path.join(OUT_DIR, `${name}.frame.png`);
+      await target.screenshot({ path: frameShot }).catch(() => {});
+      const F = metrics.analyze(frameShot);
+      frame = +F.stats.meanLum.toFixed(3);
+    }
+  }
   // a extensao aplicou estilos nesta pagina? (diagnostico: no headless-shell
   // do Playwright as extensoes nao carregam e o gate falha sem explicacao)
   const extApplied = await page.evaluate(() => Boolean(
@@ -87,7 +102,7 @@ async function shoot(context, url, name, tag, rule) {
   const featuresSrc = fs.readFileSync(path.join(ROOT, "darl-features.js"), "utf8");
   const features = await page.evaluate(`${featuresSrc}\n(globalThis.DarlFeatures && DarlFeatures.extract({ skipStyleIds: ["darl-dark-style", "darl-flash-cover", "darl-element-style"] }))`).catch(() => null);
   await page.close();
-  return { shot, features, extApplied, hover };
+  return { shot, features, extApplied, hover, frame };
 }
 
 async function main() {
@@ -146,6 +161,7 @@ async function main() {
         antes: { meanLum: +A.stats.meanLum.toFixed(3), darkFrac: +A.stats.darkFrac.toFixed(3), lumStd: +A.stats.lumStd.toFixed(3) },
         depois: { meanLum: +B.stats.meanLum.toFixed(3), darkFrac: +B.stats.darkFrac.toFixed(3), lumStd: +B.stats.lumStd.toFixed(3) },
         hover: after.hover,
+        frame: after.frame,
         deltaE76: +de.toFixed(1),
         features: after.features,
         extApplied: after.extApplied,
@@ -162,6 +178,10 @@ async function main() {
         if (r.hoverMaxLum != null) {
           if (after.hover == null) errs.push("probe de hover nao rodou");
           else if (after.hover > r.hoverMaxLum) errs.push(`hover claro (meanLum ${after.hover.toFixed(2)} > ${r.hoverMaxLum})`);
+        }
+        if (r.frameMaxLum != null) {
+          if (after.frame == null) errs.push("probe de frame nao rodou");
+          else if (after.frame > r.frameMaxLum) errs.push(`frame about:blank claro (meanLum ${after.frame.toFixed(2)} > ${r.frameMaxLum})`);
         }
         if (r.maxDeltaE && de > r.maxDeltaE) errs.push(`deltaE76 ${de.toFixed(1)} > ${r.maxDeltaE} (mexeu demais num site ja escuro)`);
         if (r.halvesDarkFrac) {
