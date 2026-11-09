@@ -827,7 +827,15 @@ function attachFrame(iframe) {
     return; // cross-origin: inacessivel (e tem script proprio se for http)
   }
   if (!win || !doc || !doc.documentElement) return; // ainda escrevendo: o "load" agenda nova passada
-  if (!DarlElement.isUnscriptedFrameURL(url)) return; // http(s): content script proprio
+  // Deteccao por ATRIBUTOS (v4.3.4): o doc.URL de um frame about:blank
+  // HERDA a URL do pai no Chrome, entao conferir doc.URL nunca identifica
+  // o frame (bug do CI: frameStyle false, marked 0, iframe claro). O src
+  // declarativo e o sinal confiavel — navegacao http(s) sempre deixa src
+  // nao-vazio e recebe content script proprio (all_frames).
+  const unscripted =
+    DarlElement.isUnscriptedFrameAttrs(iframe.getAttribute("src"), iframe.hasAttribute("srcdoc")) ||
+    DarlElement.isUnscriptedFrameURL(url);
+  if (!unscripted) return; // http(s): content script proprio
   if (frameEngines.some((e) => e.doc === doc)) return; // ja anexado
 
   let styleEl = null;
