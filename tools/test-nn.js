@@ -469,5 +469,33 @@ expect(!DarlElement.isUnscriptedFrameURL(""),
 expect(!DarlElement.isUnscriptedFrameURL(null),
   "frame: tipo invalido nao derruba o motor");
 
+// isUnscriptedFrameAttrs: deteccao DECLARATIVA de frame sem content script.
+// O doc.URL de about:blank HERDA a URL do pai no Chrome — conferir URL nao
+// identifica o frame (bug do CI v4.3.4). Os atributos sao o sinal confiavel.
+expect(DarlElement.isUnscriptedFrameAttrs(null, false),
+  "frame: sem src (about:blank sincrono de editores/preview) e remapeavel");
+expect(DarlElement.isUnscriptedFrameAttrs("", false),
+  "frame: src vazio e about:blank");
+expect(DarlElement.isUnscriptedFrameAttrs("about:blank", false),
+  "frame: src about:blank declarado");
+expect(DarlElement.isUnscriptedFrameAttrs("  ABOUT:BLANK  ", false),
+  "frame: deteccao tolera maiuscula e espaco");
+expect(DarlElement.isUnscriptedFrameAttrs("about:srcdoc", false),
+  "frame: src about:srcdoc declarado");
+expect(DarlElement.isUnscriptedFrameAttrs("https://x.com/f.html", true),
+  "frame: srcdoc vence mesmo com src http junto");
+expect(DarlElement.isUnscriptedFrameAttrs("javascript:'<b>oi</b>'", false),
+  "frame: javascript: nao recebe content script");
+expect(DarlElement.isUnscriptedFrameAttrs("data:text/html,<b>oi</b>", false),
+  "frame: data: nao recebe content script");
+expect(DarlElement.isUnscriptedFrameAttrs("blob:https://x.com/123", false),
+  "frame: blob: nao recebe content script");
+expect(!DarlElement.isUnscriptedFrameAttrs("https://chat.pradoapp.com/direct/joao", false),
+  "frame: src http tem content script proprio (all_frames)");
+expect(!DarlElement.isUnscriptedFrameAttrs("//cdn.exemplo.com/frame.html", false),
+  "frame: src relativo-protocolo navega http(s) e tem script proprio");
+expect(!DarlElement.isUnscriptedFrameAttrs("/frame.html", false),
+  "frame: src relativo navega http(s) e tem script proprio");
+
 console.log(failures === 0 ? "\ntodos os testes passaram" : `\n${failures} falha(s)`);
 process.exit(failures === 0 ? 0 : 1);
