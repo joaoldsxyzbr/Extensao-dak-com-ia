@@ -1051,6 +1051,13 @@ function start() {
       window.addEventListener("load", extractAndRefresh, { once: true });
     }
   };
+  // iframes criados/atualizados ate o load completo: mais uma passada
+  // (a descoberta tambem roda no apply e nas mutacoes que criam iframes)
+  try {
+    window.addEventListener("load", () => scheduleFramePass(), { once: true });
+  } catch {
+    /* addEventListener indisponivel: as outras descobertas cobrem */
+  }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", onReady, { once: true });
   } else {
