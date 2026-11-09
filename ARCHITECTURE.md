@@ -197,6 +197,12 @@ Em ambos: `@media print` desliga tudo.
 - **SPAs**: `MutationObserver` com throttle (≥40 mutações, ≥1 reanálise/5s, pausa
   em aba oculta) reextrai features quando o site troca de tema sem recarregar.
 - **Reanalisar**: popup envia `darl-refresh`; inline responde `darl-get-state`.
+- **Reportar problema** (v4.3.4): o popup junta host + URL (sem query/hash) +
+  as 32 features + a decisão da IA + as configurações da página ativa e o
+  `background.js` baixa um JSON único (`darl-report-<host>.json`) via
+  `chrome.downloads` — diagnostico em um clique, pronto para virar
+  arquétipo/fixture/retreino. Mesma política do dataLog: 100% local e
+  opt-in, nada sai do navegador sem o clique.
 
 ## Decisões de projeto (e o porquê)
 
