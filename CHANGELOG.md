@@ -2,6 +2,52 @@
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
 
+## [4.3.4] — fim do painel branco: frames about:blank/srcdoc no tema
+
+### Adicionado
+- **Motor de frames same-origin** (`content.js`): o MV3 injeta o content
+  script em frames http(s) (`all_frames`), mas **não** em `about:blank`/
+  `srcdoc` — editores embutidos, viewers de preview e caixas de texto
+  rica (caso Rocket.Chat, Gmail) ficavam painéis brancos no meio do tema
+  escuro. O documento topo agora estende o motor por elemento **para
+  dentro desses frames** via `iframe.contentDocument`:
+  - mesma lógica do `element.js` (fundos, texto com guarda WCAG, bordas,
+    gradientes, sombras, `fill`/`stroke`, regra de acentos vivos),
+    reusando os mapeadores puros do `DarlElement`;
+  - `getComputedStyle` do **próprio frame** (cada janela tem o seu);
+  - varredura em lotes via `requestIdleCallback`, flush incremental com
+    throttle (400ms) e `MutationObserver` por frame — a mesma disciplina
+    anti-travamento da v4.3.3;
+  - frames http(s) **não são tocados** (têm script próprio e decidem por
+    si); no modo filtro o iframe continua sendo mídia (conteúdo original
+    revertido), como sempre foi;
+  - descoberta por: `apply()` do motor por elemento, mutações que criam
+    iframes e o evento `load` de cada iframe (frame recarregado = doc
+    novo = engine novo; engines de docs mortos são coletados na passada).
+- `element.js`: função pura `isUnscriptedFrameURL()` (about:blank e
+  about:srcdoc), testada na suite.
+- Crawler: **probe de frame** (`frameProbe`/`frameMaxLum` nas
+  `FIXTURE_RULES`) — screenshot do iframe sozinho; se a prévia ficar
+  clara, o gate do job visual falha. A fixture `hybrid-chat.html` ganhou
+  um preview de anexo em `about:blank` escrito por JS (exatamente o
+  cenário do Rocket.Chat).
+- Dataset: `sites.txt` de 120 para **187 sites** — 45 escuros com dark
+  mode nativo (amostra curada da `dark-sites.config` do Dark Reader, MIT)
+  e 22 claros difíceis (da `dynamic-theme-fixes.config`): reforça a
+  classe escura do dataset real (93 claras vs 11 escuras até então) e
+  cataloga os padrões de CSS que quebram motores genéricos.
+- CI fatiado (3 fatias paralelas + job `crawl-real-registrar` que mescla
+  e commita o dataset na main) publicado em `tools/dev/ci-v4.3.4.yml` —
+  aplicar manualmente em `.github/workflows/ci.yml` (o conector GitHub
+  não tem permissão para arquivos de workflow).
+
+### Observado
+- Suite: **94 testes** (+5 de frames sem content script).
+- Alternativa avaliada e descartada: `match_origin_as_fallback` no
+  manifest injetaria o script no frame, mas cada `about:blank` viraria
+  uma "página" com decisão própria (e cache de host vazio compartilhado);
+  o motor de frames mantém a decisão coerente com a página que hospeda.
+
 ## [4.3.3] — sem travar: varredura guiada por mutações e flush espaçado
 
 ### Corrigido
