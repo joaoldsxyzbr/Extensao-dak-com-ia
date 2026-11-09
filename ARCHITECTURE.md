@@ -20,6 +20,7 @@ carregamento da página (document_start)
            ├─ fundo claro → escurece (matiz preservado); texto escuro → clareia
            │  com guarda WCAG 4.5:1; bordas, sombras e gradientes idem
            ├─ base: html escuro + color-scheme: dark (controles nativos escuros)
+           ├─ frames about:blank/srcdoc: motor de frames do documento topo (v4.3.4)
            ├─ REDE 2 (imagens, 6→12→1): ícones escuros ganham inversão local (dd-keep)
            └─ página grande demais ou erro → fallback para o modo filtro clássico:
                 REDE 3 (regiões, 8→12→1) neutraliza blocos escuros (dd-region)
@@ -143,6 +144,24 @@ nos pseudo-elementos), congela o
 se o elemento sob o ponteiro estiver claro naquele instante, congela o
 remapeamento escuro numa regra permanente (`[darl-guard="N"]`) — cobre cores
 via `var()` e estilos inline trocados por JS, pois lê o valor já resolvido.
+
+**Motor de frames same-origin** (v4.3.4, no `content.js`): o MV3 injeta o
+content script em frames http(s) (`all_frames`), mas **não** em
+`about:blank`/`srcdoc` — editores embutidos e viewers de preview
+(Rocket.Chat, Gmail) ficavam painéis brancos no meio do tema escuro. O
+documento **topo** estende o motor por elemento para dentro desses frames
+via `iframe.contentDocument`: mesma lógica de remapeamento (mapeadores
+puros do `DarlElement`, regra de acentos vivos incluída), `getComputedStyle`
+do próprio frame, varredura em lotes com `requestIdleCallback`, flush
+incremental throttled e `MutationObserver` por frame — a disciplina
+anti-travamento da v4.3.3 vale dentro dos frames também. Frames http(s)
+não são tocados (têm content script próprio e decidem por si, como
+qualquer página). A descoberta acontece no `apply()` do motor por
+elemento, em mutações que criam iframes e no evento `load` de cada iframe;
+engines de documentos mortos são coletados na passada. O gate visual
+prova o caso: a fixture `hybrid-chat.html` tem um preview em
+`about:blank` e o probe de frame (`frameProbe`/`frameMaxLum` no crawler)
+falha se a prévia ficar clara.
 
 **Modo CSS clássico** (padrão): `filter: invert(1) hue-rotate(180deg) brightness()
 contrast() sepia() grayscale()` no `<html>`, com fundo opaco branco (transparente
