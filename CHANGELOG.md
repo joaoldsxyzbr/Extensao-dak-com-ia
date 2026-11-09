@@ -2,6 +2,47 @@
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
 
+## [Não lançado] — listas de sites do Dark Reader para o crawler
+
+### Adicionado
+- `tools/dev/fetch-darkreader-lists.js`: baixa os `.config` do Dark Reader
+  (`darkreader/darkreader`, `src/config/`, MIT) e gera três listas de URLs
+  em `tools/dev/out/` (artefatos locais, não commitados):
+  - `sites-dark.txt` (`dark-sites.config`, ~1 219 sites) — dark nativo;
+    ataca o déficit da classe escura (11 registros contra 93 claros no
+    dataset de 06/11);
+  - `sites-hybrid.txt` (`detector-hints.config`, blocos `MATCH`, ~192
+    sites) — híbridos reais detectados por seletor, o caso Rocket.Chat que
+    o `load-real-data.js` hoje descarta por ambiguidade;
+  - `sites-hard-light.txt` (`dynamic-theme-fixes.config`, ~3 155 sites) —
+    páginas claras onde o motor do Dark Reader precisou de correção manual.
+  - Parser puro e testável (`topHosts`, `splitBlocks`, `parse*`), com
+    deduplicação após a conversão de curingas (`*.example.com` → domínio
+    base) e atribuição MIT no cabeçalho de cada lista.
+- `tools/dev/README.md`: seção "Listas do Dark Reader" — o que são (listas
+  de hosts, não datasets), o que fica de fora e o fluxo até o retreino.
+
+### Medido — o teto dos dados reais
+- Experimento nos 104 registros reais de 06/11: a floresta treinada **só com
+  sintéticos** acerta 96,2% neles; treinada com sintéticos + 80% dos reais,
+  acerta os 20% segurados em 95,2% — **o mesmo** que sem os reais. 5-fold CV:
+  95,2% (99/104). **Efeito dos dados reais: 0,0 pontos percentuais.**
+- A causa é o **rótulo**, não a cobertura: em gitlab.com, apple.com,
+  harvard.edu e chess.com as features dizem página clara (`htmlBg` ~1,0,
+  `fracLight` ~0,96) e o modelo está certo — o `load-real-data.js` rotula
+  "escuro" pela aparência do screenshot, e o crawler usa perfil limpo (o
+  gitlab.com tem tema escuro em cookie). Diagnóstico completo em
+  [ARCHITECTURE.md](ARCHITECTURE.md#o-teto-dos-dados-reais-medido-não-estimado).
+- Consequência: `sites-hybrid.txt` é o ganho real (híbridos hoje descartados,
+  com rótulo pelo seletor); `sites-dark.txt` só ajuda depois de corrigir a
+  regra de rótulo. Nenhum peso foi regenerado.
+
+### Nota
+- As listas **não** treinam nada por si: o modelo de páginas aprende por
+  features, que só existem depois de visitar a página. Elas escolhem o que
+  o crawler visita; o rótulo continua vindo do screenshot "antes" e das
+  regras do `load-real-data.js`.
+
 ## [4.3.4] — fim do painel branco: frames about:blank/srcdoc no tema
 
 ### Adicionado

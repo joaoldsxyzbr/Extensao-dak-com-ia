@@ -217,6 +217,69 @@ Em ambos: `@media print` desliga tudo.
 | Respeitar `darkreader-lock` | Convenção do ecossistema; sites podem pedir exclusão |
 | `forced-colors`/print inume | Acessibilidade primeiro |
 
+## O teto dos dados reais (medido, não estimado)
+
+O projeto vinha tratando "dados reais do crawler" como o próximo salto. Um
+experimento mediu o contrário e vale registrar antes de gastar tempo crawleando
+mais.
+
+**Protocolo** (nos 104 registros reais de `tools/dev/data/report-2026-11-06.json`):
+
+- **A)** floresta treinada só com arquétipos sintéticos, avaliada nos 104 reais;
+- **B)** floresta treinada com sintéticos + 80% dos reais, avaliada nos 20%
+  segurados;
+- **C)** 5-fold cross-validation nos 104 reais (cada registro avaliado por um
+  modelo que nunca o viu).
+
+**Resultados:**
+
+| Medida | Acerto |
+|---|---|
+| A) sintético puro nos 104 reais | 96,2% (100/104) |
+| B) sintético + 80% reais, nos 20% segurados | 95,2% (20/21) |
+| A) o mesmo, sem os reais | 95,2% (20/21) |
+| C) 5-fold CV nos reais | 95,2% (99/104) |
+
+**Efeito dos dados reais no holdout real: 0,0 pontos percentuais.** O modelo já
+reproduz o que o rótulo diz; somar páginas não move o número porque o gargalo
+não é quantidade de dados.
+
+**A causa é o rótulo, não a cobertura.** Diagnóstico dos 5 erros do CV:
+
+| Site | Rótulo | Modelo | `htmlBg` | `fracLight` | `textLum` | Screenshot "antes" |
+|---|---|---|---|---|---|---|
+| gitlab.com | escuro | claro (0,95) | 0,99 | 0,96 | 0,47 | `meanLum` 0,18 |
+| apple.com | escuro | claro (0,92) | 1,00 | 0,98 | 0,54 | `meanLum` 0,16 |
+| harvard.edu | escuro | claro (0,77) | 0,96 | 0,95 | 0,89 | `meanLum` 0,23 |
+| chess.com | escuro | claro (0,53) | 0,18 | 0,00 | 0,91 | `meanLum` 0,32 |
+| who.int | claro | escuro (0,47) | — | — | — | `meanLum` 0,65 |
+
+Nos quatro primeiros, as **features dizem página clara** (`htmlBg` ~1,0,
+`fracLight` ~0,96) e o modelo está certo; o rótulo diz "escuro" porque o
+`load-real-data.js` decide pela **aparência do screenshot**, e o crawler tira o
+screenshot num perfil limpo. O gitlab.com tem tema escuro salvo em cookie: no
+navegador do usuário é escuro, no perfil do crawler é claro. O mesmo vale para
+apple.com e harvard.edu. O chess.com é o caso inverso do Rocket.Chat — casca
+escura (`htmlBg` 0,18, `fracDark` 0,99) com texto claro e conteúdo claro.
+
+**Consequência para o Dark Reader.** As listas do Dark Reader
+(`tools/dev/fetch-darkreader-lists.js`) escolhem **o que crawlear**, não o que
+treinar — e só ajudam na medida em que o rótulo for confiável:
+
+- `sites-hybrid.txt` (blocos `MATCH` do `detector-hints.config`) é o ganho
+  real: são os híbridos que o `load-real-data.js` hoje **descarta** por
+  ambiguidade, e o seletor dá um rótulo independente da aparência.
+- `sites-dark.txt` só ajuda depois de corrigir a regra de rótulo — senão
+  injeta mais registros como os quatro acima.
+- `sites-hard-light.txt` é matéria-prima de arquétipos e fixtures, não de
+  treino direto.
+
+**Ordem recomendada:** (1) desambiguar "escuro de aparência" com as features
+por elemento no `load-real-data.js` — recupera potencialmente os 4 erros
+escuros (95,2% → ~99%); (2) rotular os híbridos pelo seletor; (3) só então
+crawlear as listas, em ondas (os registros reais entram com peso 8, e 3 155
+sites de uma vez dominariam o professor sintético).
+
 ## Limitações conhecidas
 
 - `position: fixed` dentro de região neutralizada pode acompanhar o scroll
