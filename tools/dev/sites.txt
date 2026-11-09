@@ -149,3 +149,81 @@ https://example.com
 https://www.chess.com
 https://www.allrecipes.com
 https://www.weather.com
+
+# --- sites escuros: dark mode nativo (v4.3.4).
+# Amostra curada da dark-sites.config do Dark Reader (MIT): sites que o
+# Dark Reader pula por terem tema escuro proprio. Entram de proposito na
+# lista para reforcar a classe "nao mexer" do dataset real (93 claras vs
+# apenas 11 escuras na coleta de 06/11).
+https://caniuse.com
+https://codepen.io
+https://codesandbox.io
+https://codewars.com
+https://dartpad.dev
+https://docs.rs
+https://carbon.now.sh
+https://brew.sh
+https://developers.cloudflare.com
+https://developer.valvesoftware.com
+https://crontab.guru
+https://craiyon.com
+https://giphy.com
+https://crunchyroll.com
+https://dota2.com
+https://epicgames.com
+https://factorio.com
+https://gamejolt.com
+https://coolmathgames.com
+https://crazygames.com
+https://chesstempo.com
+https://giantbomb.com
+https://curseforge.com
+https://betterttv.com
+https://betterdiscord.app
+https://faceit.com
+https://escapefromtarkov.com
+https://bg3.wiki
+https://based.cooking
+https://bugmenot.com
+https://daringfireball.net
+https://doesitarm.com
+https://draculatheme.com
+https://fireship.io
+https://forgejo.org
+https://garudalinux.org
+https://glslsandbox.com
+https://cheat.sh
+https://cssbattle.dev
+https://audiomass.co
+https://asoftmurmur.com
+https://darkreader.org
+https://dicebear.com
+https://bequiet.com
+https://doge.gov
+
+# --- casos claros dificeis (v4.3.4).
+# Amostra curada da dynamic-theme-fixes.config do Dark Reader (MIT): sites
+# claros onde o motor dinamico deles precisou de correcao manual — sao os
+# padroes de CSS que quebram motores genericos. Materia-prima de arquetipos.
+https://adguard.com
+https://sapo.pt
+https://accuweather.com
+https://aljazeera.com
+https://arstechnica.com
+https://bandcamp.com
+https://bestbuy.com
+https://bilibili.com
+https://boardgamegeek.com
+https://businessinsider.com
+https://codecademy.com
+https://codeforces.com
+https://css-tricks.com
+https://audible.com
+https://behance.net
+https://apnews.com
+https://alibaba.com
+https://chromestatus.com
+https://crates.io
+https://crunchbase.com
+https://ableton.com
+https://androidauthority.com
