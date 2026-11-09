@@ -28,6 +28,11 @@
   .composer { padding: 10px 14px; display: flex; gap: 8px; }
   .composer .fake-input { flex: 1; border: 1px solid #ccccdd; color: #9aa3b1; padding: 8px; }
   .composer button { background: #3390ec; color: #ffffff; border: none; padding: 8px 14px; }
+  /* preview de anexo em iframe about:blank (v4.3.4): o MV3 nao injeta
+     content script nele — sem o motor de frames do documento topo, este
+     painel ficaria branco no meio do tema escuro */
+  .attach { padding: 0 14px 10px; }
+  .attach iframe.probe { width: 340px; height: 170px; border: 1px solid #ccccdd; background: #ffffff; }
 </style>
 </head>
 <body>
@@ -80,6 +85,9 @@
     <div class="chat">
       <div class="msg">Oi! Viu que o centro branco agora escurece?</div>
       <div class="msg">Sim, e a sidebar escura continua escura.</div>
+      <div class="attach">
+        <iframe class="probe" title="Preview do anexo"></iframe>
+      </div>
       <div class="msg">Antes a IA achava que a pagina inteira ja era escura.</div>
       <div class="msg">O arquetipo CHAT_HYBRID veio do dataLog real.</div>
       <div class="msg">O texto escuro do painel clareia sozinho.</div>
@@ -96,5 +104,14 @@
       <button>Enviar</button>
     </div>
   </section>
+  <script>
+    // Conteúdo do iframe escrito por JS (about:blank): simula o editor/
+    // preview embutido do Rocket.Chat — sem script da extensão dentro dele.
+    var f = document.querySelector("iframe.probe");
+    var d = f.contentDocument;
+    d.open();
+    d.write('<body style="margin:0;font:13px Arial,sans-serif;color:#222222;background:#ffffff">Prévia do anexo<br>relatorio.pdf — 2 páginas<br><span style="color:#3390ec">baixar</span></body>');
+    d.close();
+  </script>
 </body>
 </html>
