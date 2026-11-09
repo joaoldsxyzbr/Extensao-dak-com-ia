@@ -80,11 +80,19 @@ No duelo local contra a MLP v3, a floresta venceu: MSE 0.00019 vs 0.00116,
 confiança do caso PRADO 1.00 vs 0.97 — e árvores são o formato natural para
 engolir os dados reais do crawler sem retrabalho. Desde a v4.3.0 o treino soma
 páginas reais do `crawl-real` (`tools/dev/data/report-*.json`, auto-rotuladas
-por `tools/load-real-data.js` com peso 8 cada); desde a v4.3.1 híbridos de
-aparência (screenshot na zona cinza) são desambiguados pelo conteúdo medido
-por elemento — elementos claros + texto escuro inverte, elementos escuros +
-texto claro não mexe — e o que continua ambíguo é descartado. Holdout e gates
-continuam sintéticos e determinísticos para comparar versões entre si.
+por `tools/load-real-data.js` com peso 8 cada); desde a v4.3.5 o rótulo é
+decidido pelo **conteúdo medido por elemento ANTES da aparência do
+screenshot** (o screenshot mente: hero escuro/colorido arrasta o `meanLum`,
+tema em cookie escurece o que o crawler limpo renderiza claro): conteúdo
+claro (`fracLight` ≥ 0,85) inverte — inclusive página clara atrás de hero
+escuro (gitlab/apple/harvard), mesmo com texto claro de hero; casca escura
+com texto claro ilegível (`fracDark` ≥ 0,85 + `lowContrast` ≥ 0,50 +
+`textLum` ≤ 0,60) é **híbrido** e inverte com motor por elemento
+(Rocket.Chat/php.net: a casca fica escura, o painel claro escurece); escuro
+de verdade (`fracDark` ≥ 0,85 + `textLum` ≥ 0,60 + `lowContrast` ≤ 0,25 —
+texto claro E legível) não mexe; a aparência do screenshot virou fallback e
+o que continua ambíguo é descartado. Holdout e gates continuam sintéticos e
+determinísticos para comparar versões entre si.
 
 ### Rede 2 — imagens (6 → 12 → 1)
 
@@ -274,11 +282,16 @@ treinar — e só ajudam na medida em que o rótulo for confiável:
 - `sites-hard-light.txt` é matéria-prima de arquétipos e fixtures, não de
   treino direto.
 
-**Ordem recomendada:** (1) desambiguar "escuro de aparência" com as features
-por elemento no `load-real-data.js` — recupera potencialmente os 4 erros
-escuros (95,2% → ~99%); (2) rotular os híbridos pelo seletor; (3) só então
-crawlear as listas, em ondas (os registros reais entram com peso 8, e 3 155
-sites de uma vez dominariam o professor sintético).
+**Ordem recomendada — status v4.3.5:** (1) ✅ feito na v4.3.5: conteúdo por
+elemento antes da aparência — recupera os erros "escuro de aparência"
+(gitlab/apple/harvard → claro) e 8 descartados; 5-fold CV mediu 96,2% →
+99,1% (111/112, único erro o chess.com borderline); (2) ✅ parcialmente
+feito na v4.3.5: híbridos de casca escura rotulados pela assinatura de
+features (`fracDark` alto + `lowContrast` alto — Rocket.Chat/php.net);
+híbridos que a assinatura não cobre seguem descartados, e o seletor do
+`detector-hints` continua sendo o rótulo independente para esses casos;
+(3) crawlear as listas em ondas segue pendente (os registros reais entram
+com peso 8, e 3 155 sites de uma vez dominariam o professor sintético).
 
 ## Limitações conhecidas
 
