@@ -1,20 +1,24 @@
-// Carregador de dados reais para o treino do modelo de paginas (Extensão
-// Dark com IA v4.3). Le os datasets coletados pelo crawler (tools/dev/data/
-// report-*.json, commitados de volta pelo job crawl-real do CI) e rotula
-// cada pagina pela APARENCIA ORIGINAL (screenshot "antes" + metricas
-// perceptuais) — auto-labeling: ninguem precisa rotular a mao.
+// Rotulagem por CONTEUDO ANTES DA APARENCIA (v4.3.5). O screenshot mente:
+// hero escuro arrasta o meanLum de paginas claras (gitlab/harvard/apple no
+// dataset real), tema em cookie escurece o que o crawler limpo renderiza
+// claro, e media colorida enche a zona cinza. As features por elemento nao
+// mentem (v4.3.1 comprovou; v4.3.5 generaliza para TODAS as paginas, nao
+// so as de screenshot cinza). Indices = ordem canonica (page-dataset.js
+// ORDER2): 11 fracDark, 12 fracLight, 13 textLum, 14 lowContrast.
 //
-// Regra de rotulagem (conservadora de proposito):
-//   - claro (meanLum alto, pouco escuro)  -> inverter (familia LIGHT)
-//   - escuro (meanLum baixo, muito escuro) -> retoque (familia DARK)
-//   - hibrido de APARENCIA (screenshot na zona cinza: hero colorido, muitas
-//     midias) -> desambiguado pelo CONTEUDO (v4.3.1): features por elemento
-//     dizem a verdade que a media de pixels nao diz —
-//       elementos claros + texto escuro  -> claro (inverte; imagens ficam)
-//       elementos escuros + texto claro  -> escuro (nao mexe)
-//   - ainda ambiguo, OU pagina em branco (lumStd baixo = erro de carga,
-//     paywall, bloqueio de bot) -> DESCARTADO: rotulo sem confianca nao
-//     entra no treino.
+//   conteudo claro (fracLight >= 0.85)  -> inverter (familia LIGHT)
+//     — pagina clara atras de hero escuro/colorido; o texto medio pode ser
+//       claro (texto branco do hero), por isso nao se exige textLum baixo.
+//   conteudo escuro (fracDark >= 0.85):
+//     texto claro E legivel (textLum >= 0.60, lowC <= 0.25) -> retoque (DARK)
+//     texto com contraste ruim contra o fundo herdado (lowC >= 0.50,
+//       textLum <= 0.60) -> HIBRIDO de casca escura: inverter (LIGHT) com
+//       motor por elemento (caso Rocket.Chat/php.net: casca fica, painel
+//       claro escurece). Num site escuro de verdade o texto e claro E o
+//       contraste medido e bom (v4.1).
+//     senao -> ambiguo: DESCARTADO
+//   aparencia (fallback do conteudo): claro/escuro como antes; zona cinza
+//     sem assinatura de conteudo continua descartada.
 //
 // Uso: node -e "console.log(require('./tools/load-real-data.js').stats())"
 // O treinador (train-page-gbdt.js) soma os registros ao treino com peso.
@@ -36,16 +40,21 @@ const LIGHT_DARKFRAC = 0.35;
 const DARK_MEANLUM = 0.25;
 const DARK_DARKFRAC = 0.55;
 
-// Desambiguacao dos hibridos de aparencia pelo conteudo (v4.3.1). A media
-// de pixels mente sobre paginas claras cheias de imagens/hero colorido; a
-// leitura por elemento nao. Indices = ordem canonica (page-dataset.js ORDER2).
+// Rotulagem por CONTEUDO (v4.3.5). Medido no dataset real de 06/11 (120
+// sites): escuro verdadeiro tem fracDark >= 0.95, textLum >= 0.61 e
+// lowContrast <= 0.11; claro atras de hero escuro tem fracLight >= 0.95 e
+// fracDark <= 0.04; hibrido de casca escura tem fracDark >= 0.96 com
+// lowContrast >= 0.62 (php.net) — as margens entre os grupos sao enormes.
 const F_FRAC_DARK = 11;
 const F_FRAC_LIGHT = 12;
 const F_TEXT_LUM = 13;
-const HYBRID_LIGHT_FRACLIGHT = 0.85; // quase todos os elementos claros...
-const HYBRID_LIGHT_TEXTLUM = 0.5; // ...com texto escuro = conteudo claro
-const HYBRID_DARK_FRACDARK = 0.85; // quase todos os elementos escuros...
-const HYBRID_DARK_TEXTLUM = 0.6; // ...com texto claro = conteudo escuro
+const F_LOW_CONTRAST = 14;
+const CONTENT_LIGHT_FRACLIGHT = 0.85; // maioria dos elementos clara = pagina clara
+const CONTENT_DARK_FRACDARK = 0.85; // maioria dos elementos escura = escuro ou hibrido
+const CONTENT_DARK_TEXTLUM = 0.6; // escuro de verdade: texto claro...
+const CONTENT_DARK_LOWC = 0.25; // ...E legivel contra o fundo escuro
+const HYBRID_DARKSHELL_LOWC = 0.5; // casca escura: texto claro acha contraste RUIM...
+const HYBRID_DARKSHELL_TEXTLUM = 0.6; // ...contra o fundo herdado (baixa legibilidade)
 
 // Pura: dado um registro do report.json, devolve {label, y} ou null se o
 // rotulo nao e confiavel. Testavel sem filesystem.
@@ -55,21 +64,29 @@ function labelEntry(entry) {
   const a = entry.antes;
   if (!a || typeof a.meanLum !== "number" || typeof a.darkFrac !== "number" || typeof a.lumStd !== "number") return null;
   if (a.lumStd < BLANK_LUMSTD) return null; // blank/erro: sem rotulo
+  const f = entry.features;
+  // CONTEUDO ANTES DA APARENCIA (v4.3.5): o screenshot mente (hero escuro,
+  // midias, tema em cookie); as features por elemento nao.
+  if (f[F_FRAC_LIGHT] >= CONTENT_LIGHT_FRACLIGHT) {
+    return { label: "light", y: Y_LIGHT.slice() }; // conteudo claro: inverte
+  }
+  if (f[F_FRAC_DARK] >= CONTENT_DARK_FRACDARK) {
+    if (f[F_LOW_CONTRAST] >= HYBRID_DARKSHELL_LOWC && f[F_TEXT_LUM] <= HYBRID_DARKSHELL_TEXTLUM) {
+      // hibrido de casca escura: inverte com motor por elemento (a casca
+      // fica escura, o painel claro escurece) — caso Rocket.Chat.
+      return { label: "light", y: Y_LIGHT.slice() };
+    }
+    if (f[F_TEXT_LUM] >= CONTENT_DARK_TEXTLUM && f[F_LOW_CONTRAST] <= CONTENT_DARK_LOWC) {
+      return { label: "dark", y: Y_DARK.slice() }; // escuro de verdade: nao mexe
+    }
+    return null; // escuro ambiguo: sem confianca
+  }
+  // Fallback por APARENCIA quando o conteudo nao decide.
   if (a.meanLum > LIGHT_MEANLUM && a.darkFrac < LIGHT_DARKFRAC) {
     return { label: "light", y: Y_LIGHT.slice() };
   }
   if (a.meanLum < DARK_MEANLUM && a.darkFrac > DARK_DARKFRAC) {
     return { label: "dark", y: Y_DARK.slice() };
-  }
-  // Hibrido de APARENCIA: screenshot na zona cinza, mas o CONTEUDO (features
-  // por elemento) diz a verdade — o hero colorido/midias arrastam o meanLum,
-  // o elemento nao mente (v4.3.1).
-  const f = entry.features;
-  if (f[F_FRAC_LIGHT] >= HYBRID_LIGHT_FRACLIGHT && f[F_TEXT_LUM] <= HYBRID_LIGHT_TEXTLUM) {
-    return { label: "light", y: Y_LIGHT.slice() }; // conteudo claro: inverte
-  }
-  if (f[F_FRAC_DARK] >= HYBRID_DARK_FRACDARK && f[F_TEXT_LUM] >= HYBRID_DARK_TEXTLUM) {
-    return { label: "dark", y: Y_DARK.slice() }; // conteudo escuro: nao mexe
   }
   return null; // hibrido/ambiguo: de fora
 }
