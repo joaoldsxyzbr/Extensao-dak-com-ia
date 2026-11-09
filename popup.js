@@ -178,6 +178,65 @@ function wire() {
     }, 2500);
   });
 
+  $("report-problem").addEventListener("click", async () => {
+    const btn = $("report-problem");
+    btn.disabled = true;
+    btn.textContent = "Preparando...";
+    try {
+      // URL sem query/hash (mesma politica do dataLog: so o necessario
+      // para reproduzir o caso, sem vazar nada da navegacao)
+      let pageUrl = "";
+      let pagePath = "";
+      try {
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        if (tab && tab.url) {
+          const u = new URL(tab.url);
+          pageUrl = u.origin + u.pathname;
+          pagePath = u.pathname.slice(0, 120);
+        }
+      } catch {
+        pageUrl = "";
+      }
+      const applied = pageState && pageState.applied;
+      const decision = applied ? {
+        engine: applied.engine || null,
+        invert: !!applied.invert,
+        invertProb: typeof applied.invertProb === "number" ? applied.invertProb : null,
+        off: !!applied.off,
+        brightness: typeof applied.brightness === "number" ? applied.brightness : null,
+        contrast: typeof applied.contrast === "number" ? applied.contrast : null,
+        sepia: typeof applied.sepia === "number" ? applied.sepia : null,
+        tint: typeof applied.tint === "number" ? applied.tint : null,
+      } : null;
+      const features = ((pageState && pageState.features) || []).map((v) => Math.round(v * 1000) / 1000);
+      const res = await chrome.runtime.sendMessage({
+        type: "darl-report-problem",
+        report: {
+          host,
+          path: pagePath,
+          url: pageUrl,
+          features,
+          decision,
+          settings: {
+            enabled: settings.enabled,
+            elementMode: settings.elementMode,
+            svgFilter: settings.svgFilter,
+            smartImages: settings.smartImages,
+            invertMedia: settings.invertMedia,
+            forceTheme: settings.forceTheme,
+          },
+        },
+      });
+      btn.textContent = res && res.ok ? "Relatório baixado — cole no chat" : "Sem dados desta página";
+    } catch {
+      btn.textContent = "Falha no relatório";
+    }
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = "Reportar problema nesta página";
+    }, 3000);
+  });
+
   $("reanalyze").addEventListener("click", async () => {
     let tabId = null;
     try {
