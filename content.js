@@ -356,6 +356,7 @@ function apply(decision) {
     if (style) style.remove();
     applied = decision ? { ...decision, css: false } : { off: true };
     if (typeof DarlElement !== "undefined") DarlElement.stop();
+    stopFrameEngines(); // frames about:blank voltam ao original junto com o topo
     clearRegions();
     removeSvgFilters();
     reveal();
@@ -382,12 +383,14 @@ function apply(decision) {
       applied = { ...decision, css: true };
       clearRegions(); // sem filtro global, nao ha regioes para neutralizar
       queueImages();
+      scheduleFramePass(); // iframes about:blank/srcdoc sem script proprio (v4.3.4)
       return;
     }
     decision = { ...decision, engine: "filter" }; // lacre: segue como filtro
   }
 
   if (DarlElement.isActive()) DarlElement.stop();
+  stopFrameEngines(); // no filtro o iframe e midia (conteudo original revertido)
   let el = style;
   if (!el) {
     el = document.createElement("style");
@@ -611,6 +614,302 @@ function decideRegions() {
   regionMarked = marked;
 }
 
+// -------------------------------------- frames sem content script (v4.3.4)
+//
+// O MV3 injeta o content script em frames http(s) (all_frames), mas NAO em
+// about:blank/srcdoc: editores embutidos, viewers de preview e caixas de
+// texto rica (caso Rocket.Chat, Gmail) ficavam paineis brancos no meio do
+// tema escuro. Frames de mesma origem sao acessiveis pelo documento topo
+// (iframe.contentDocument): o topo estende o motor por elemento para
+// dentro deles, com os MESMOS mapeadores puros do DarlElement. Frames com
+// URL propria (http/https) tem content script proprio e decidem por si -
+// cada frame e analisado como pagina. No modo filtro o iframe e tratado
+// como midia (conteudo original revertido), como sempre foi.
+
+const FRAME_STYLE_ID = "darl-frame-style";
+const FRAME_MARK = "darl-frame-el";
+const FRAME_TEXTISH = new Set(["INPUT", "TEXTAREA", "SELECT", "OPTION", "BUTTON", "A", "LABEL", "SUMMARY"]);
+const FRAME_SCAN_MS = 24; // orcamento por lote, igual ao element.js
+const FRAME_FLUSH_MS = 400; // throttle de flush do <style> do frame
+const FRAME_MAX_ELEMENTS = 5000; // frames sao cascas menores que a pagina
+const FRAME_PASS_DELAY_MS = 300;
+
+let frameEngines = []; // { win, doc, styleEl, queue, markId, ruleBuffer, lastFlushAt, observer, scanning, stopped }
+let framePassTimer = null;
+const frameLoadHandled = new WeakSet(); // iframes com listener de "load" anexado
+
+function frameIsQueueable(node) {
+  if (!node || node.nodeType !== 1) return false;
+  // isQueueableNode filtra tags inuteis e os <style> da extensao do topo;
+  // aqui falta so o style do proprio frame
+  return DarlElement.isQueueableNode(node) && node.id !== FRAME_STYLE_ID;
+}
+
+// Regra de um elemento do frame: espelha o elementRule do element.js, com o
+// getComputedStyle do PROPRIO frame (cada janela tem o seu) e os mesmos
+// mapeadores puros (mapBackground/mapText/mapNeutral/gradientes/sombras).
+function frameRule(eng, el, id) {
+  const cs = eng.win.getComputedStyle(el);
+  const parts = [];
+  const { BG_LIGHT, TEXT_DARK, CANVAS_L } = DarlElement._internals;
+
+  const bg = parseRGB(cs.backgroundColor);
+  const fg = parseRGB(cs.color);
+  const needsText =
+    (el.childNodes && Array.prototype.some.call(el.childNodes, (n) => n.nodeType === 3 && n.textContent.trim())) ||
+    FRAME_TEXTISH.has(el.tagName);
+  const fgDark = Boolean(fg) && needsText && DarlElement.lum255(fg.r, fg.g, fg.b) <= TEXT_DARK;
+
+  let bgLum = CANVAS_L;
+  if (bg && bg.a > 0.04) {
+    const bl = DarlElement.lum255(bg.r, bg.g, bg.b);
+    if (bl >= BG_LIGHT) {
+      // acento vivo (dot/badge): minusculo, saturado e sem texto escuro
+      // proprio mantem a cor original, como no documento topo
+      let accent = false;
+      if (!fgDark && DarlElement.isAccentColor(bg)) {
+        try {
+          const rect = el.getBoundingClientRect();
+          accent = DarlElement.isAccentSize(rect.width, rect.height);
+        } catch {
+          accent = false;
+        }
+      }
+      if (accent) {
+        bgLum = bl; // a cor viva ficou: textos herdeiros medem contra ela
+      } else {
+        const m = DarlElement.mapBackground(bg);
+        parts.push(`background-color: ${m.css} !important`);
+        bgLum = m.lum;
+      }
+    } else if (bg.a >= 0.98) {
+      bgLum = bl; // fundo ja escuro: textos devem se medir contra ele
+    }
+  }
+
+  if (fg && needsText) {
+    const fl = DarlElement.lum255(fg.r, fg.g, fg.b);
+    if (fl <= TEXT_DARK) {
+      const m = DarlElement.mapText(fg, bgLum);
+      parts.push(`color: ${m.css} !important`);
+    }
+  }
+
+  const borderSeen = new Set();
+  for (const b of ["borderTopColor", "borderRightColor", "borderBottomColor", "borderLeftColor"]) {
+    const bc = parseRGB(cs[b]);
+    if (!bc) continue;
+    const key = bc.r + "," + bc.g + "," + bc.b + "," + bc.a;
+    if (borderSeen.has(key)) continue;
+    borderSeen.add(key);
+    if (DarlElement.lum255(bc.r, bc.g, bc.b) >= 0.30) {
+      const m = DarlElement.mapNeutral(bc, bgLum);
+      if (m.css) parts.push(`${b.replace(/[A-Z]/g, (ch) => "-" + ch.toLowerCase())}: ${m.css} !important`);
+    }
+  }
+
+  const bi = cs.backgroundImage;
+  if (typeof bi === "string" && bi.includes("gradient(")) {
+    const g = DarlElement.remapGradient(bi);
+    if (g) parts.push(`background-image: ${g} !important`);
+  }
+  const sh = cs.boxShadow;
+  if (typeof sh === "string" && sh && sh !== "none") {
+    const s = DarlElement.remapShadow(sh, bgLum);
+    if (s) parts.push(`box-shadow: ${s} !important`);
+  }
+  const fill = parseRGB(cs.fill);
+  if (fill && DarlElement.lum255(fill.r, fill.g, fill.b) <= TEXT_DARK && fill.a > 0.04) {
+    parts.push(`fill: ${DarlElement.mapText(fill, bgLum).css} !important`);
+  }
+  const stroke = parseRGB(cs.stroke);
+  if (stroke && DarlElement.lum255(stroke.r, stroke.g, stroke.b) <= TEXT_DARK && stroke.a > 0.04) {
+    parts.push(`stroke: ${DarlElement.mapText(stroke, bgLum).css} !important`);
+  }
+
+  if (!parts.length) return "";
+  el.setAttribute(FRAME_MARK, String(id));
+  return `[${FRAME_MARK}="${id}"] { ${parts.join("; ")}; }`;
+}
+
+// Flush incremental com throttle, como o element.js: cada flush no frame
+// custa recalculo de estilo do frame inteiro.
+function frameFlush(eng, force) {
+  if (!eng.styleEl || !eng.ruleBuffer.length) return;
+  if (!force) {
+    const now = Date.now();
+    if (now - eng.lastFlushAt < FRAME_FLUSH_MS) return;
+  }
+  try {
+    eng.styleEl.appendChild(eng.doc.createTextNode("\n" + eng.ruleBuffer.join("\n")));
+  } catch {
+    return; // doc destruido entre o lote e o flush
+  }
+  eng.ruleBuffer = [];
+  eng.lastFlushAt = Date.now();
+}
+
+function frameScanBatch(eng) {
+  if (eng.stopped || !eng.queue.length) {
+    eng.scanning = false;
+    return;
+  }
+  const t0 = Date.now();
+  const rules = [];
+  while (eng.queue.length && Date.now() - t0 < FRAME_SCAN_MS) {
+    const el = eng.queue.shift();
+    if (!el.isConnected) continue;
+    if (el.hasAttribute && el.hasAttribute(FRAME_MARK)) continue;
+    if (!frameIsQueueable(el)) continue;
+    try {
+      const rule = frameRule(eng, el, ++eng.markId);
+      if (rule) rules.push(rule);
+      else el.setAttribute(FRAME_MARK, String(++eng.markId)); // marca mesmo sem regra
+    } catch {
+      /* estilo imparsavel: segue o proximo */
+    }
+    if (eng.markId > FRAME_MAX_ELEMENTS) break;
+  }
+  if (rules.length) {
+    eng.ruleBuffer.push(...rules);
+    frameFlush(eng, false);
+  }
+  if (eng.queue.length && eng.markId <= FRAME_MAX_ELEMENTS) {
+    const step = () => frameScanBatch(eng);
+    if (window.requestIdleCallback) requestIdleCallback(step, { timeout: 400 });
+    else setTimeout(step, 16);
+  } else {
+    eng.scanning = false;
+    frameFlush(eng, true); // varredura acabou: entrega o que sobrou
+  }
+}
+
+function frameScheduleScan(eng) {
+  if (eng.stopped || eng.scanning || !eng.queue.length) return;
+  eng.scanning = true;
+  const step = () => frameScanBatch(eng);
+  if (window.requestIdleCallback) requestIdleCallback(step, { timeout: 400 });
+  else setTimeout(step, 16);
+}
+
+// Fila do frame guiada por mutacoes (mesma logica do element.js): editores
+// escrevem no DOM sem parar; reconsultar o frame inteiro e que nao pode.
+function frameQueueMutations(eng, muts) {
+  if (eng.stopped) return;
+  let fresh = false;
+  for (const m of muts) {
+    const added = m.addedNodes;
+    if (!added || !added.length) continue;
+    for (let i = 0; i < added.length; i++) {
+      const n = added[i];
+      if (!frameIsQueueable(n)) continue;
+      eng.queue.push(n);
+      fresh = true;
+      if (n.querySelectorAll) {
+        for (const c of n.querySelectorAll("*")) {
+          if (frameIsQueueable(c)) eng.queue.push(c);
+        }
+      }
+    }
+  }
+  if (fresh) frameScheduleScan(eng);
+}
+
+function attachFrame(iframe) {
+  let win = null;
+  let doc = null;
+  let url = "";
+  try {
+    win = iframe.contentWindow;
+    doc = iframe.contentDocument;
+    url = (doc && doc.URL) || "";
+  } catch {
+    return; // cross-origin: inacessivel (e tem script proprio se for http)
+  }
+  if (!win || !doc || !doc.documentElement) return; // ainda escrevendo: o "load" agenda nova passada
+  if (!DarlElement.isUnscriptedFrameURL(url)) return; // http(s): content script proprio
+  if (frameEngines.some((e) => e.doc === doc)) return; // ja anexado
+
+  let styleEl = null;
+  try {
+    styleEl = doc.createElement("style");
+    styleEl.id = FRAME_STYLE_ID;
+    doc.documentElement.appendChild(styleEl);
+    styleEl.textContent = "html { background-color: #17181d !important; color-scheme: dark !important; }";
+  } catch {
+    return; // doc hostil: deixa o frame como esta
+  }
+  const eng = {
+    win, doc, styleEl,
+    queue: [doc.documentElement, doc.body].filter(Boolean),
+    markId: 0, ruleBuffer: [], lastFlushAt: 0,
+    observer: null, scanning: false, stopped: false,
+  };
+  if (doc.body) eng.queue.push(...doc.body.querySelectorAll("*"));
+  frameEngines.push(eng);
+  if (typeof MutationObserver === "function") {
+    eng.observer = new MutationObserver((muts) => frameQueueMutations(eng, muts));
+    eng.observer.observe(doc.documentElement, { childList: true, subtree: true });
+  }
+  frameScheduleScan(eng);
+}
+
+// Uma passada: descobre iframes about:blank/srcdoc ainda sem tema. Roda no
+// apply() do motor por elemento, nas mutacoes que criam iframes e no
+// "load" de cada iframe (recarregou -> documento novo -> novo engine).
+function framePass() {
+  if (!applied || applied.off || !applied.invert || applied.engine !== "elements") return;
+  // higiene: engines de iframes que recarregaram/sumiram (doc desconectado)
+  try {
+    frameEngines = frameEngines.filter((e) => !e.stopped && e.doc.isConnected !== false);
+  } catch {
+    /* segue com a lista como esta */
+  }
+  let iframes = [];
+  try {
+    iframes = Array.prototype.slice.call(document.getElementsByTagName("iframe"));
+  } catch {
+    return;
+  }
+  for (const f of iframes) {
+    try {
+      if (!frameLoadHandled.has(f)) {
+        frameLoadHandled.add(f);
+        f.addEventListener("load", scheduleFramePass);
+      }
+      attachFrame(f);
+    } catch {
+      /* iframe hostil: segue o proximo */
+    }
+  }
+}
+
+function scheduleFramePass() {
+  if (framePassTimer !== null) return;
+  framePassTimer = setTimeout(() => {
+    framePassTimer = null;
+    framePass();
+  }, FRAME_PASS_DELAY_MS);
+}
+
+function stopFrameEngines() {
+  for (const eng of frameEngines) {
+    eng.stopped = true;
+    if (eng.observer) {
+      try { eng.observer.disconnect(); } catch { /* observer ja morto */ }
+      eng.observer = null;
+    }
+    try {
+      if (eng.styleEl) eng.styleEl.remove();
+      const marked = eng.doc.querySelectorAll(`[${FRAME_MARK}]`);
+      for (const el of marked) el.removeAttribute(FRAME_MARK);
+    } catch {
+      /* doc ja destruido */
+    }
+  }
+  frameEngines = [];
+}
+
 // ---------------------------------------------------------------- estado
 
 // Memoriza a ultima decisao da rede para este host (anti-flash na proxima visita).
@@ -713,9 +1012,28 @@ function scheduleReAnalyze() {
   }, wait);
 }
 
+// Pura: alguma mutacao criou iframe? (agendar a passada de frames sem
+// esperar a reanalise completa da SPA, que e throttled)
+function hasIframeMutation(muts) {
+  for (const m of muts) {
+    const added = m.addedNodes;
+    if (!added || !added.length) continue;
+    for (let i = 0; i < added.length; i++) {
+      const n = added[i];
+      if (!n || n.nodeType !== 1) continue;
+      if (n.tagName === "IFRAME") return true;
+      if (typeof n.querySelector === "function" && n.querySelector("iframe")) return true;
+    }
+  }
+  return false;
+}
+
 function watchMutations() {
   if (!IS_TOP || typeof MutationObserver !== "function") return;
-  new MutationObserver(scheduleReAnalyze).observe(document.documentElement, {
+  new MutationObserver((muts) => {
+    scheduleReAnalyze();
+    if (hasIframeMutation(muts)) scheduleFramePass();
+  }).observe(document.documentElement, {
     childList: true,
     subtree: true,
     attributes: true,
