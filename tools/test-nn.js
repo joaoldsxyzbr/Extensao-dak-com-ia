@@ -384,9 +384,43 @@ expect(LR.labelEntry({ antes: { meanLum: 0.42, darkFrac: 0.29, lumStd: 0.3 }, fe
 const hDark = new Array(32).fill(0.2); hDark[11] = 0.96; hDark[13] = 0.9;
 expect(LR.labelEntry({ antes: { meanLum: 0.43, darkFrac: 0.39, lumStd: 0.31 }, features: hDark }).label === "dark",
   "dados reais: hibrido de aparencia com conteudo escuro rotulado retoque (ex. roblox/steam)");
-const hAmb = new Array(32).fill(0.2); hAmb[12] = 0.97; hAmb[13] = 0.56;
-expect(LR.labelEntry({ antes: { meanLum: 0.57, darkFrac: 0.4, lumStd: 0.44 }, features: hAmb }) === null,
-  "dados reais: hibrido com texto na zona cinza continua descartado");
+// CONTEUDO ANTES DA APARENCIA (v4.3.5): o screenshot mente sobre paginas
+// claras com hero escuro/colorido (gitlab/harvard/apple/mdn/nasa no dataset
+// real de 06/11: screenshot "escuro", fracLight >= 0.95). O texto medio pode
+// ser claro (texto branco do hero), por isso conteudo claro nao exige
+// textLum baixo. Vetores REAIS do report-2026-11-06.json.
+const mkV = (base) => { const v = new Array(32).fill(0.2); Object.assign(v, base); return v; };
+const labelOf = (e) => { const r = LR.labelEntry(e); return r ? r.label : null; };
+const heroGitlab = mkV({ 11:0.04, 12:0.96, 13:0.47, 14:0.52 });
+expect(labelOf({ antes: { meanLum: 0.18, darkFrac: 0.90, lumStd: 0.18 }, features: heroGitlab }) === "light",
+  "dados reais: claro atras de hero escuro rotulado inverter (gitlab: screenshot escuro, conteudo claro)");
+const heroHarvard = mkV({ 11:0.03, 12:0.95, 13:0.89, 14:0.90 });
+expect(labelOf({ antes: { meanLum: 0.23, darkFrac: 0.75, lumStd: 0.13 }, features: heroHarvard }) === "light",
+  "dados reais: claro com texto claro de hero rotulado inverter (harvard: textLum alto deixou de ser descarte)");
+const heroCDC = mkV({ 12:0.97, 13:0.56 });
+expect(labelOf({ antes: { meanLum: 0.48, darkFrac: 0.05, lumStd: 0.25 }, features: heroCDC }) === "light",
+  "dados reais: claro atras de hero colorido rotulado inverter (ex. cdc/nasa, texto na zona cinza)");
+// HIBRIDO DE CASCA ESCURA (v4.3.5): casca escura + conteudo claro preso
+// (Rocket.Chat/php.net) — o texto medio claro acha contraste ruim contra o
+// fundo herdado (lowContrast alto). Vetor real do caso Prado (v4.1).
+const shellPhp = mkV({ 11:0.99, 12:0.00, 13:0.51, 14:0.62 });
+expect(labelOf({ antes: { meanLum: 0.38, darkFrac: 0.63, lumStd: 0.30 }, features: shellPhp }) === "light",
+  "dados reais: hibrido de casca escura rotulado inverter (php.net: painel claro preso na casca)");
+const shellRocket = mkV({ 11:0.97, 12:0.01, 13:0.58, 14:0.96 });
+expect(labelOf({ antes: { meanLum: 0.30, darkFrac: 0.50, lumStd: 0.12 }, features: shellRocket }) === "light",
+  "dados reais: hibrido Rocket.Chat (vetor real do Prado) rotulado inverter");
+// GUARDAS: escuro de verdade tem texto claro E legivel (lowContrast baixo);
+// escuro ambiguo (texto escuro sobre casca escura, sem assinatura) segue
+// descartado — nao pode virar dark sem confianca.
+const trueDark = mkV({ 11:0.97, 12:0.01, 13:0.89, 14:0.02 });
+expect(labelOf({ antes: { meanLum: 0.16, darkFrac: 0.86, lumStd: 0.19 }, features: trueDark }) === "dark",
+  "dados reais: escuro verdadeiro rotulado retoque (discord: texto claro legivel)");
+const ambTumblr = mkV({ 11:0.99, 12:0.01, 13:0.30, 14:0.30 });
+expect(LR.labelEntry({ antes: { meanLum: 0.34, darkFrac: 0.59, lumStd: 0.32 }, features: ambTumblr }) === null,
+  "dados reais: escuro ambiguo (texto escuro, lowC medio) continua descartado (tumblr)");
+const shellHighText = mkV({ 11:0.96, 12:0.01, 13:0.65, 14:0.90 });
+expect(LR.labelEntry({ antes: { meanLum: 0.3, darkFrac: 0.5, lumStd: 0.15 }, features: shellHighText }) === null,
+  "dados reais: casca escura com texto claro ilegivel (textLum alto + lowC alto) nao pode virar dark");
 
 // ------------------------------------------------- infra
 const dimsRef = [32, 32, 24, 6];
