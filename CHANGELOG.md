@@ -2,6 +2,42 @@
 
 Formato inspirado em Keep a Changelog; datas omitidas (repositório pessoal).
 
+## [4.3.5] — rotulagem por conteúdo: claro atrás de hero escuro e híbridos de casca escura
+
+### Corrigido
+- `tools/load-real-data.js`: o rótulo agora é decidido pelo **conteúdo
+  medido por elemento antes da aparência do screenshot**. O screenshot
+  mente — hero escuro arrasta o `meanLum` de páginas claras e tema em
+  cookie escurece o que o crawler de perfil limpo renderiza claro; as
+  features por elemento não (v4.3.1 comprovou na zona cinza, v4.3.5
+  generaliza para todas as páginas).
+- gitlab.com, apple.com e harvard.edu rotulados **claro** (eram "escuro"):
+  `fracLight` ≥ 0,95 no dataset real de 06/11. A floresta anterior
+  aprendia com esses rótulos errados (peso 8) a **não mexer** em páginas
+  claras com hero escuro — erro de comportamento, não só de métrica.
+- 8 páginas recuperadas do descarte: MDN, NASA, Mozilla, Springer, Elsevier,
+  CDC e Eventbrite (claro atrás de hero colorido, `fracLight` ≥ 0,85) e
+  php.net (**híbrido de casca escura** — a nova regra pega a assinatura do
+  caso Rocket.Chat: `fracDark` ≥ 0,85 + `lowContrast` ≥ 0,50 + `textLum`
+  ≤ 0,60 → inverte com motor por elemento).
+
+### Adicionado
+- Guardas de confiança: escuro de verdade exige texto claro E legível
+  (`textLum` ≥ 0,60 + `lowContrast` ≤ 0,25 — escuro com contraste ruim não
+  vira "retoque"); o que continua ambíguo segue descartado (ex.: tumblr).
+- 7 testes novos de rotulagem com **vetores reais** do dataset (gitlab,
+  harvard, cdc, php.net, Rocket.Chat do Prado, discord, tumblr) — a guarda
+  de `lowContrast` é comprovada load-bearing: sem ela o teste do híbrido
+  ilegível falha. Suite: 106 → 113 testes.
+
+### Medido
+- 5-fold CV nos dados reais (mesma metodologia do experimento de 09/11):
+  **96,2% → 99,1%** (111/112; único erro o chess.com, caso borderline
+  conhecido). Páginas rotuladas: 104 → 112 (104 claras, 8 escuras).
+- Retreino com pesos regenerados: holdout 100%, MSE 0,00025, PRADO 1,00,
+  TELEGRAM_DARK 0,00, ROCKET 1,00, 15 arquétipos OK, T=0,3, determinístico
+  (SHA idêntico ao retreinar). Floresta: 53176 bytes.
+
 ## [Não lançado] — listas de sites do Dark Reader para o crawler
 
 ### Adicionado
